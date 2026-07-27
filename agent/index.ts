@@ -108,6 +108,13 @@ export class LegacyKeeperAgent {
       return state;
     }
 
+    // Reset once liveness is restored, so a SECOND grace period alerts too.
+    // A latch that never clears means the owner is warned the first time they
+    // go quiet and silently the second time — the opposite of useful.
+    if (!state.inGracePeriod && this.graceAlertSent) {
+      this.graceAlertSent = false;
+    }
+
     if (state.inGracePeriod && !this.graceAlertSent) {
       const deadline = new Date(
         (state.lastHeartbeat + state.timeoutDuration + state.gracePeriod) * 1000

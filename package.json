@@ -11,13 +11,16 @@
     "verify:all": "bash loop/guardrails/verify.sh",
     "format": "prettier --write '**/*.ts' '**/*.sol'",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
-    "deploy:local": "hardhat run scripts/deploy.ts --network localhost"
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "agent": "tsx agent/run.ts",
+    "agent:bot": "tsx agent/run.ts --with-bot",
+    "workflows:deploy": "tsx scripts/workflows/deploy.ts"
   },
   "dependencies": {
+    "dotenv": "^16.4.0",
     "ethers": "^6.13.0",
     "node-telegram-bot-api": "^0.66.0",
-    "nodemailer": "^6.9.0",
-    "dotenv": "^16.4.0"
+    "nodemailer": "^6.9.0"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
