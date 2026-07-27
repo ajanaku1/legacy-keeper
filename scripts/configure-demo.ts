@@ -11,10 +11,13 @@
 
 import { ethers, network } from 'hardhat';
 
-// Fixed demo beneficiaries — no keys needed, they only receive.
+// Fresh addresses per run. The first pass used 0x1111…/0x2222…, which are
+// public vanity addresses holding other people's ETH — their balance deltas
+// prove nothing. Beneficiaries only receive, so a random address with no
+// known key is the cleanest possible evidence.
 const BENEFICIARIES: Array<{ address: string; shareBps: number }> = [
-  { address: '0x1111111111111111111111111111111111111111', shareBps: 6000 },
-  { address: '0x2222222222222222222222222222222222222222', shareBps: 4000 },
+  { address: ethers.Wallet.createRandom().address, shareBps: 6000 },
+  { address: ethers.Wallet.createRandom().address, shareBps: 4000 },
 ];
 
 const FUND_AMOUNT = ethers.parseEther('0.01');

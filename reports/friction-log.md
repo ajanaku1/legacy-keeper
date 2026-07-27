@@ -45,6 +45,46 @@ exercise our retry path.
 
 ---
 
+## 07 · A reused `idempotency_key` silently replays a cached failure
+
+**Status:** confirmed on a live Sepolia contract. Highest-severity finding.
+
+`execute_contract_call` accepts an `idempotency_key`. The obvious reading —
+"one key per logical action, so retries cannot double-submit" — produces an
+agent that **can never recover from a failure**.
+
+Observed: a keeper fired `executeInheritance()` slightly before its grace
+period expired and reverted with `LK: not yet due`. It retried three more
+times over four minutes, reusing the same key. All three returned the
+identical revert. Meanwhile the contract was verifiably due:
+
+```
+secondsSinceHeartbeat: 420      (needs 150)
+timeoutExceeded: true   graceElapsed: true    ← due
+keeper reported: "LK: not yet due"            ← cached from attempt 1
+```
+
+The retries never re-executed. KeeperHub replayed the cached outcome, so the
+agent concluded the estate could not be distributed when in fact it could.
+
+**Why this is dangerous:** it fails in the direction of inaction on an
+irreversible, time-critical action, and it is invisible — the agent gets a
+plausible, contract-shaped error message rather than a cache-hit signal.
+Nothing in the response distinguishes a fresh revert from a replayed one.
+
+**Fix we adopted:** scope the key per *attempt*
+(`${executionKey}-a${attempt}`). Transport-level duplicates of a single
+attempt are still deduplicated, and the contract's own executed flags remain
+the real guard against double distribution — which is where that guarantee
+belongs anyway.
+
+**Suggested fix upstream:** document that the key caches outcomes including
+failures, and either surface a `cached: true` field on replayed responses or
+scope caching to successful executions only. As written, the parameter's name
+suggests safety while the behaviour introduces a liveness bug.
+
+---
+
 ## 06 · `status: "completed"` does not mean the call succeeded
 
 **Status:** confirmed. Cost us a real bug.

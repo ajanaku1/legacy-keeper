@@ -35,11 +35,17 @@ export interface TriggerInfo {
 }
 
 export interface ContractCallOptions {
-  /** >1 raises the gas limit; <1 deliberately underprices it. */
+  /** >1 raises the gas limit. KeeperHub clamps values below its own floor. */
   gasLimitMultiplier?: number;
   priorityFeeGwei?: number;
   value?: string;
   maxAttempts?: number;
+  /**
+   * Base backoff between attempts. The default is tuned for transport faults;
+   * a precondition that becomes true with time (a grace period that has not
+   * elapsed yet) wants a much longer one.
+   */
+  retryBaseDelayMs?: number;
 }
 
 // KeeperHub reports 'completed' for a settled direct execution — whether the
@@ -74,9 +80,18 @@ export class KeeperHubExecutor {
     }
   }
 
-  /** Distribute the estate. Permissionless onchain; the keeper is the caller. */
-  async executeInheritance(trigger: TriggerInfo): Promise<ExecutionResult> {
-    return this.contractCall('executeInheritance', [], trigger, {});
+  /**
+   * Distribute the estate. Permissionless onchain; the keeper is the caller.
+   *
+   * Defaults are deliberately patient. A keeper that wakes on a cron may fire
+   * slightly before the grace period expires and revert with "not yet due";
+   * giving up there would strand an estate over a few seconds of drift.
+   */
+  async executeInheritance(
+    trigger: TriggerInfo,
+    options: ContractCallOptions = { maxAttempts: 4, retryBaseDelayMs: 45_000 }
+  ): Promise<ExecutionResult> {
+    return this.contractCall('executeInheritance', [], trigger, options);
   }
 
   /** Distribute one tracked ERC-20, pulled from the owner's wallet. */
@@ -180,7 +195,13 @@ export class KeeperHubExecutor {
           chain_id: String(this.chainId),
           function_name: functionName,
           function_args: JSON.stringify(args),
-          idempotency_key: executionKey,
+          // Per ATTEMPT, not per action. KeeperHub caches the outcome against
+          // this key and replays it — so reusing one key across retries
+          // returns the first failure forever and recovery is impossible.
+          // Idempotency still holds where it matters: a transport-level
+          // duplicate of a single attempt is deduplicated, and the contract's
+          // executed flags remain the real guard against double distribution.
+          idempotency_key: `${executionKey}-a${attempt}`,
         };
         // Every scalar on this tool is string-typed, gas knobs included.
         //
@@ -245,7 +266,12 @@ export class KeeperHubExecutor {
       }
 
       if (attempt < maxAttempts) {
-        const delay = 1000 * 2 ** (attempt - 1) * (0.5 + Math.random());
+        const base = options.retryBaseDelayMs ?? 1000;
+        const delay = base * 2 ** (attempt - 1) * (0.5 + Math.random());
+        console.log(
+          `[executor] ${functionName} attempt ${attempt} failed (${lastError}); ` +
+            `retrying in ${Math.round(delay / 1000)}s`
+        );
         await new Promise((r) => setTimeout(r, delay));
       }
     }
