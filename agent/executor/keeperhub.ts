@@ -17,6 +17,11 @@ import {
   Outcome,
   newExecutionKey,
 } from '../audit/ledger';
+import {
+  chooseRoute,
+  confirmRoute,
+  assertRoutesExclusive,
+} from '../keeperhub/route-policy';
 
 export interface ExecutionResult {
   success: boolean;
@@ -66,6 +71,9 @@ interface Settlement {
   gasUsed?: string;
   blockNumber?: number;
   error?: string;
+  /** Reported by KeeperHub, never assumed. */
+  sponsored?: boolean;
+  privateRoute?: boolean;
 }
 
 export class KeeperHubExecutor {
@@ -170,6 +178,7 @@ export class KeeperHubExecutor {
   ): Promise<ExecutionResult> {
     const executionKey = newExecutionKey(functionName);
     const maxAttempts = options.maxAttempts ?? 3;
+    const routeDecision = chooseRoute(functionName);
 
     let lastError = '';
 
@@ -183,6 +192,7 @@ export class KeeperHubExecutor {
         trigger,
         action: functionName,
         params: { args, ...options },
+        route: { requested: routeDecision.route, confirmed: false },
         outcome: 'failed',
       };
 
@@ -225,9 +235,17 @@ export class KeeperHubExecutor {
         record.keeperhubExecutionId = executionId;
         record.simulation = { ok: true, detail: 'accepted by KeeperHub' };
 
+        Object.assign(payload, routeDecision.payload);
+
         const settled: Settlement = executionId
           ? await this.awaitSettlement(String(executionId))
           : { outcome: 'success', txHash: parsed?.tx_hash };
+
+        // Record what the platform says it did, not what we asked for. An
+        // execution reporting both routes would misdescribe the submission.
+        assertRoutesExclusive(settled);
+        const confirmed = confirmRoute(routeDecision, settled);
+        record.route = { requested: confirmed.route, confirmed: confirmed.confirmed };
 
         record.txHash = settled.txHash ?? parsed?.tx_hash ?? parsed?.txHash;
         record.gasUsed = settled.gasUsed;
@@ -320,6 +338,8 @@ export class KeeperHubExecutor {
             parsed?.gas_used?.toString(),
           blockNumber: parsed?.block_number ?? parsed?.blockNumber,
           error: parsed?.error ?? parsed?.failure_reason ?? inner.revertReason,
+          sponsored: inner.sponsored ?? parsed?.sponsored,
+          privateRoute: inner.privateRoute ?? parsed?.privateRoute,
         };
       }
 

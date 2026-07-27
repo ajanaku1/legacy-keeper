@@ -41,6 +41,16 @@ export interface AuditEntry {
   gasUsed?: string;
   blockNumber?: number;
 
+  /**
+   * Which submission path was asked for, and whether KeeperHub confirmed it.
+   * Recorded separately because an intended route is not evidence of the
+   * route actually used.
+   */
+  route?: {
+    requested: 'sponsored' | 'private' | 'default';
+    confirmed: boolean;
+  };
+
   outcome: Outcome;
   error?: string;
   durationMs?: number;

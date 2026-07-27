@@ -73,6 +73,19 @@ else
   fail "G2 contract tests" "${SUMMARY:-see /tmp/lk-test.log}"
 fi
 
+# ── G9 · Agent reliability suite ──────────────────────────────────────
+# MCP handshake, SSE framing, session expiry, 402, per-attempt idempotency,
+# settlement-vs-receipt disagreement, and route exclusivity — all against a
+# local fake server, because you cannot ask production to fail on cue.
+if [ ! -d node_modules ]; then
+  fail "G9 agent tests" "node_modules missing"
+elif npx vitest run >/tmp/lk-vitest.log 2>&1; then
+  AGENT_COUNT=$(grep -oE 'Tests +[0-9]+ passed' /tmp/lk-vitest.log | grep -oE '[0-9]+' | head -1)
+  pass "G9 agent tests (${AGENT_COUNT:-?} passed)"
+else
+  fail "G9 agent tests" "$(grep -E 'FAIL|✕' /tmp/lk-vitest.log | head -3 | sed 's/^/          /')"
+fi
+
 # ── G6 · Agent typechecks ─────────────────────────────────────────────
 # Added after tsc caught three real defects the other gates passed over,
 # including a deploy script that would ReferenceError on every verify.
