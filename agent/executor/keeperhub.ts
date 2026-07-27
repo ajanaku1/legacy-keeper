@@ -108,9 +108,9 @@ export class KeeperHubExecutor {
   async read(functionName: string, args: unknown[] = []): Promise<string> {
     return this.mcp.callTool('execute_contract_call', {
       contract_address: this.contractAddress,
-      chain_id: this.chainId,
+      chain_id: String(this.chainId),
       function_name: functionName,
-      function_args: args,
+      function_args: JSON.stringify(args),
     });
   }
 
@@ -153,11 +153,14 @@ export class KeeperHubExecutor {
       };
 
       try {
+        // chain_id and function_args are STRINGS despite the schema showing
+        // them as scalar/array shapes — passing a number or a real array is
+        // rejected with a -32602 validation error. See reports/friction-log.md.
         const payload: Record<string, unknown> = {
           contract_address: this.contractAddress,
-          chain_id: this.chainId,
+          chain_id: String(this.chainId),
           function_name: functionName,
-          function_args: args,
+          function_args: JSON.stringify(args),
           idempotency_key: executionKey,
         };
         if (options.gasLimitMultiplier !== undefined) {
