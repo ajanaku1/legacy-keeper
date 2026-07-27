@@ -103,16 +103,47 @@ done
 
 BANNED_HITS=""
 if [ -n "$SCAN_DIRS" ]; then
+  # Fabricated VALUES — hashes, signatures, canned success payloads.
   # shellcheck disable=SC2086
   BANNED_HITS=$(grep -rniE \
     "repeat\(64\)|repeat\(130\)|simulated success|simulate.*for the hackathon|fake ?tx|dummy ?hash|0xa{40,}" \
     $SCAN_DIRS 2>/dev/null | grep -v "verify.sh")
+
+  # Stub LANGUAGE. This class slipped through for three phases: bot/index.ts
+  # had zero network calls and returned a hardcoded true, while the gate stayed
+  # green because it only looked for fabricated hashes. A module that says it
+  # will do something "in production" is not doing it now.
+  # shellcheck disable=SC2086
+  STUB_HITS=$(grep -rniE \
+    "in production, this|for now, return|stub implementation|not implemented|placeholder — real|TODO: implement" \
+    $SCAN_DIRS 2>/dev/null | grep -v "verify.sh")
+  [ -n "$STUB_HITS" ] && BANNED_HITS="${BANNED_HITS}${BANNED_HITS:+
+}${STUB_HITS}"
 fi
 
 if [ -z "$BANNED_HITS" ]; then
-  pass "G3 no fabricated success values"
+  pass "G3 no fabricated success values or stub modules"
 else
-  fail "G3 no fabricated success values" "$(echo "$BANNED_HITS" | head -5 | sed 's/^/          /')"
+  fail "G3 no fabricated success values or stub modules" \
+    "$(echo "$BANNED_HITS" | head -6 | sed 's/^/          /')"
+fi
+
+# ── G8 · A module that names an external API must actually call it ─────
+# bot/index.ts documented "POST https://api.telegram.org/..." in a comment and
+# never issued a request. Claiming an integration in prose is not integrating.
+API_LIARS=""
+for f in $(find agent bot -name "*.ts" 2>/dev/null); do
+  if grep -qiE "https?://(api|app)\.[a-z0-9.-]+" "$f" 2>/dev/null; then
+    grep -qE "fetch\(|axios|request\(" "$f" 2>/dev/null || API_LIARS="${API_LIARS}${f}
+"
+  fi
+done
+
+if [ -z "$API_LIARS" ]; then
+  pass "G8 modules that name an API actually call it"
+else
+  fail "G8 modules that name an API actually call it" \
+    "$(printf '%s' "$API_LIARS" | sed 's/^/          /')"
 fi
 
 # ── G4 · KeeperHub is the only execution layer ────────────────────────
