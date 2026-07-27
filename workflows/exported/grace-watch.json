@@ -1,0 +1,81 @@
+{
+  "id": "sux1hhjj0u6an7p6vddp2",
+  "name": "LegacyKeeper — Grace Period Watch",
+  "description": "Listens for GracePeriodEntered on-chain and alerts immediately. Escalation stops depending on a polling loop being alive.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "GracePeriodEntered",
+        "config": {
+          "network": "11155111",
+          "eventName": "GracePeriodEntered",
+          "contractABI": "[{\"name\":\"GracePeriodEntered\",\"type\":\"event\",\"inputs\":[{\"name\":\"deadline\",\"type\":\"uint64\",\"indexed\":false}]}]",
+          "triggerType": "Event",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "alert",
+      "data": {
+        "type": "action",
+        "label": "Escalate To Owner",
+        "config": {
+          "chatId": "000000000",
+          "message": "LegacyKeeper: grace period has begun. Check in now to cancel distribution.",
+          "actionType": "telegram/send-message"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->alert",
+      "source": "trigger-1",
+      "target": "alert"
+    }
+  ],
+  "visibility": "private",
+  "enabled": false,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-07-27T23:12:10.950Z",
+  "updatedAt": "2026-07-27T23:12:10.950Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "read",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

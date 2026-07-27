@@ -1,0 +1,128 @@
+{
+  "id": "5w133r3gajq3haixv1nhl",
+  "name": "LegacyKeeper — Block Health Check",
+  "description": "Chain-native liveness check every 50 blocks. Deliberately redundant with the cron monitor so a single scheduler outage cannot silently stop the estate from executing.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "Every 50 Blocks",
+        "config": {
+          "network": "11155111",
+          "triggerType": "Block",
+          "blockInterval": "50"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "read-status",
+      "data": {
+        "type": "action",
+        "label": "Read Timeout Status",
+        "config": {
+          "abi": "[{\"name\":\"getTimeoutStatus\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[],\"outputs\":[{\"name\":\"timeoutExceeded\",\"type\":\"bool\"},{\"name\":\"graceElapsed\",\"type\":\"bool\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/read-contract",
+          "abiFunction": "getTimeoutStatus",
+          "functionArgs": "[]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    },
+    {
+      "id": "overdue",
+      "data": {
+        "type": "action",
+        "label": "Overdue?",
+        "config": {
+          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 504,
+        "y": 0
+      }
+    },
+    {
+      "id": "alert",
+      "data": {
+        "type": "action",
+        "label": "Alert Missed Execution",
+        "config": {
+          "chatId": "000000000",
+          "message": "LegacyKeeper: distribution is due but has not executed. The scheduled monitor may be down.",
+          "actionType": "telegram/send-message"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->read-status",
+      "source": "trigger-1",
+      "target": "read-status"
+    },
+    {
+      "id": "read-status->overdue",
+      "source": "read-status",
+      "target": "overdue"
+    },
+    {
+      "id": "overdue->alert:true",
+      "source": "overdue",
+      "target": "alert",
+      "sourceHandle": "true"
+    }
+  ],
+  "visibility": "private",
+  "enabled": false,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-07-27T23:12:11.818Z",
+  "updatedAt": "2026-07-27T23:12:11.818Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "read",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

@@ -1,0 +1,80 @@
+{
+  "id": "ryd34r3ayrg2u8o29fmrk",
+  "name": "LegacyKeeper — Heartbeat Relay",
+  "description": "Relays an owner-signed EIP-712 heartbeat so proving liveness never requires the owner to hold gas.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "Heartbeat Webhook",
+        "config": {
+          "triggerType": "Webhook"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "relay",
+      "data": {
+        "type": "action",
+        "label": "Relay Heartbeat",
+        "config": {
+          "abi": "[{\"name\":\"heartbeatBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "heartbeatBySig",
+          "functionArgs": "[\"{{@trigger-1:Heartbeat Webhook.nonce}}\",\"{{@trigger-1:Heartbeat Webhook.deadline}}\",\"{{@trigger-1:Heartbeat Webhook.signature}}\"]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->relay",
+      "source": "trigger-1",
+      "target": "relay"
+    }
+  ],
+  "visibility": "private",
+  "enabled": false,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-07-27T23:12:10.071Z",
+  "updatedAt": "2026-07-27T23:12:10.071Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "read",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

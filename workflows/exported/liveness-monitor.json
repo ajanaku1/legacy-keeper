@@ -1,0 +1,154 @@
+{
+  "id": "n6h03seyd2178mvj0p9nm",
+  "name": "LegacyKeeper — Liveness Monitor",
+  "description": "Scheduled liveness evaluation. Reads getTimeoutStatus and distributes the estate once the grace period has elapsed. This is Mode A running with nobody awake.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "Every 5 minutes",
+        "config": {
+          "triggerType": "Schedule",
+          "scheduleCron": "*/5 * * * *",
+          "scheduleTimezone": "UTC"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "read-status",
+      "data": {
+        "type": "action",
+        "label": "Read Timeout Status",
+        "config": {
+          "abi": "[{\"name\":\"getTimeoutStatus\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[],\"outputs\":[{\"name\":\"timeoutExceeded\",\"type\":\"bool\"},{\"name\":\"graceElapsed\",\"type\":\"bool\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/read-contract",
+          "abiFunction": "getTimeoutStatus",
+          "functionArgs": "[]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    },
+    {
+      "id": "is-due",
+      "data": {
+        "type": "action",
+        "label": "Grace Elapsed?",
+        "config": {
+          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 504,
+        "y": 0
+      }
+    },
+    {
+      "id": "distribute",
+      "data": {
+        "type": "action",
+        "label": "Execute Inheritance",
+        "config": {
+          "abi": "[{\"name\":\"executeInheritance\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "executeInheritance",
+          "functionArgs": "[]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
+        "y": 0
+      }
+    },
+    {
+      "id": "notify",
+      "data": {
+        "type": "action",
+        "label": "Notify Beneficiaries",
+        "config": {
+          "chatId": "000000000",
+          "message": "LegacyKeeper: estate distributed. tx {{@distribute:Execute Inheritance.transactionHash}}",
+          "actionType": "telegram/send-message"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1008,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->read-status",
+      "source": "trigger-1",
+      "target": "read-status"
+    },
+    {
+      "id": "read-status->is-due",
+      "source": "read-status",
+      "target": "is-due"
+    },
+    {
+      "id": "is-due->distribute:true",
+      "source": "is-due",
+      "target": "distribute",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "distribute->notify",
+      "source": "distribute",
+      "target": "notify"
+    }
+  ],
+  "visibility": "private",
+  "enabled": false,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-07-27T23:12:08.358Z",
+  "updatedAt": "2026-07-27T23:12:08.358Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "read",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

@@ -165,16 +165,45 @@ that responses can be SSE-framed.
 
 ---
 
-## 02 · Docs describe no local workflow-definition schema
+## 02 · The workflow schema exists but is undiscoverable from the docs
 
-**Status:** observation, informs our design.
+**Status:** CORRECTED. My earlier claim — that no schema existed — was wrong.
 
-Workflows are defined via the visual builder, REST API, or MCP — there is no
-documented JSON schema for defining one in-repo. The inherited build shipped
-`starter/templates/*.json` in an invented schema that does not correspond to
-anything the API accepts.
+`list_action_schemas` returns a complete `workflowStructure` (react-flow shaped
+`nodes[]` + `edges[]`), the full `templateSyntax` for cross-node references
+(`{{@nodeId:Label.field}}`), all 6 trigger definitions with their required
+fields, and 442 action schemas. Everything needed to author a workflow in code
+is there.
 
-For a git-tracked, reviewable agent this is a real gap: there is no obvious way
-to keep workflow definitions in version control alongside the code that depends
-on them. Phase 2 will confirm what `create_workflow` actually accepts and
-whether a round-trip (create → get → commit) is a usable pattern.
+None of it appears on the documentation site, which describes only the visual
+builder, REST API and MCP as authoring routes. A builder reading the docs
+concludes workflows cannot be version-controlled; the inherited build in this
+repo invented a schema on that assumption and shipped templates the API would
+never accept.
+
+Round-tripping works well once found: `create_workflow` → `get_workflow` →
+commit preserves the graph exactly, including `sourceHandle: "true"` on
+Condition edges.
+
+**Suggested fix:** link `list_action_schemas` from the workflow docs page, or
+publish the `workflowStructure` block as a documented schema. This is the
+difference between "workflows are a UI feature" and "workflows are code".
+
+---
+
+## 08 · `validate_workflow` cannot validate a workflow that does not exist yet
+
+**Status:** confirmed.
+
+`validate_workflow` requires a `workflowId`, so it validates only workflows
+already persisted. There is no dry-run for a candidate definition.
+
+The practical consequence: to find out whether a definition is well-formed you
+must first `create_workflow` it. A malformed definition therefore leaves a
+broken workflow in the account, and iterating on a graph means repeatedly
+creating and deleting real objects.
+
+**Suggested fix:** accept `nodes`/`edges` directly as an alternative to
+`workflowId`, so a definition can be checked before it is persisted. This
+matters most for exactly the audience the onboarding bounty targets — someone
+authoring their first workflow in code, who will get it wrong several times.
