@@ -188,8 +188,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
   describe('B1/B2 · evacuation', () => {
     it('sweeps native ETH to the vault on a recovery-key signature alone', async () => {
       const { keeper, owner, recovery, vault, attacker } = await setup();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await owner.sendTransaction({
         to: await keeper.getAddress(),
         value: ONE_ETH,
@@ -209,8 +209,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
 
     it('sweeps tracked ERC-20s out of the owner wallet to the vault', async () => {
       const { keeper, token, recovery, vault, attacker } = await setup();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setTrackedTokens([await token.getAddress()]);
       await token.approve(await keeper.getAddress(), TOKEN_SUPPLY);
 
@@ -223,8 +223,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
 
     it('rejects a signature from the owner key — only the recovery key authorizes', async () => {
       const { keeper, owner, recovery, vault } = await setup();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
 
       const deadline = await futureDeadline();
       // A fully compromised wallet key must not be able to evacuate.
@@ -237,8 +237,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
 
     it('rejects a malleable signature', async () => {
       const { keeper, recovery, vault } = await setup();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
 
       const deadline = await futureDeadline();
       const sig = await signAction(recovery, keeper, 'Evacuate', 4, deadline);
@@ -267,8 +267,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
     it('evacuation blocks a later inheritance', async () => {
       const { keeper, owner, keeperBot, recovery, vault, b1 } = await setup();
       await keeper.addBeneficiary(b1.address, 10000);
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await owner.sendTransaction({
         to: await keeper.getAddress(),
         value: ONE_ETH,
@@ -287,8 +287,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
     it('inheritance blocks a later evacuation', async () => {
       const { keeper, owner, keeperBot, recovery, vault, b1 } = await setup();
       await keeper.addBeneficiary(b1.address, 10000);
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await owner.sendTransaction({
         to: await keeper.getAddress(),
         value: ONE_ETH,
@@ -367,8 +367,8 @@ describe('LegacyKeeper — Goal.md predicates', () => {
 
     it('evacuateToken sweeps a token the batch loop missed', async () => {
       const { keeper, token, recovery, vault, attacker } = await setup();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setTrackedTokens([await token.getAddress()]);
 
       // No allowance yet, so the sweep loop finds nothing to move.

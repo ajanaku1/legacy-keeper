@@ -71,6 +71,10 @@ contract LegacyKeeper {
     ///      made unrunnable by a long token list.
     uint256 public constant MAX_TRACKED_TOKENS = 32;
 
+    /// @dev Bounds the distribution loop so an estate cannot be configured
+    ///      into a state where executing it exceeds the block gas limit.
+    uint256 public constant MAX_BENEFICIARIES = 20;
+
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     bytes32 private constant HEARTBEAT_TYPEHASH =
@@ -79,12 +83,22 @@ contract LegacyKeeper {
         keccak256("Evacuate(uint256 nonce,uint256 deadline)");
     bytes32 private constant PANIC_TYPEHASH =
         keccak256("Panic(uint256 nonce,uint256 deadline)");
+    bytes32 private constant ROTATE_RECOVERY_TYPEHASH =
+        keccak256("RotateRecoveryKey(address newKey,uint256 nonce,uint256 deadline)");
+    bytes32 private constant SET_VAULT_TYPEHASH =
+        keccak256("SetSafeVault(address newVault,uint256 nonce,uint256 deadline)");
 
     // ──────────────────────────────────────────────
     // State
     // ──────────────────────────────────────────────
 
     address public owner;
+    /// @dev Two-step handover. A stolen key must not be able to lock the real
+    ///      owner out in one transaction, and ERC-20 allowances point at the
+    ///      current owner — an unacknowledged handover would silently break
+    ///      token distribution.
+    address public pendingOwner;
+
     LivenessConfig public liveness;
     VaultConfig public vault;
 
@@ -105,6 +119,11 @@ contract LegacyKeeper {
 
     /// @dev One distribution per token, mirroring the native path's idempotency.
     mapping(address => bool) public tokenDistributed;
+
+    /// @dev token => beneficiary => amount owed after a failed delivery.
+    ///      Blocklisted recipients are real (USDC, USDT); one frozen address
+    ///      must not strand everyone else's share.
+    mapping(address => mapping(address => uint256)) public pendingTokenWithdrawal;
 
     bool public inheritanceExecuted;
     bool public evacuationExecuted;
@@ -130,6 +149,9 @@ contract LegacyKeeper {
     event BeneficiaryRemoved(address indexed wallet, uint16 shareBps);
     event TrackedTokensUpdated(uint256 count);
     event RecoveryKeyRegistered(address indexed recoveryKey);
+    event RecoveryKeyRotated(address indexed from, address indexed to);
+    event OwnershipTransferProposed(address indexed from, address indexed to);
+    event TokenDeliveryDeferred(address indexed token, address indexed beneficiary, uint256 amount);
     event ConfigUpdated(string key);
 
     // ──────────────────────────────────────────────
@@ -251,12 +273,28 @@ contract LegacyKeeper {
             Beneficiary memory b = beneficiaries[i];
             uint256 amount = (available * b.shareBps) / TOTAL_BPS;
             if (amount == 0) continue;
-            require(
-                _safeTransferFrom(token, owner, b.wallet, amount),
-                "LK: token transfer failed"
-            );
-            emit InheritanceTransfer(b.wallet, token, amount);
+
+            // Mirrors the native pull-fallback. A blocklisted or frozen
+            // recipient records a claim instead of reverting the batch.
+            if (_safeTransferFrom(token, owner, b.wallet, amount)) {
+                emit InheritanceTransfer(b.wallet, token, amount);
+            } else {
+                pendingTokenWithdrawal[token][b.wallet] += amount;
+                emit TokenDeliveryDeferred(token, b.wallet, amount);
+            }
         }
+    }
+
+    /// @notice Retry a token share whose automatic delivery failed.
+    function claimToken(address token) external nonReentrant {
+        uint256 amount = pendingTokenWithdrawal[token][msg.sender];
+        require(amount > 0, "LK: nothing pending");
+        pendingTokenWithdrawal[token][msg.sender] = 0;
+        require(
+            _safeTransferFrom(token, owner, msg.sender, amount),
+            "LK: token transfer failed"
+        );
+        emit InheritanceTransfer(msg.sender, token, amount);
     }
 
     function _assertInheritanceReady() private view {
@@ -381,7 +419,13 @@ contract LegacyKeeper {
         (bool ok, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, amount)
         );
-        return ok && (data.length == 0 || abi.decode(data, (bool)));
+        // Three shapes must be handled: no return data (USDT), a clean bool,
+        // and malformed data too short to decode. Decoding fewer than 32 bytes
+        // reverts, which would take the whole distribution down with it.
+        if (!ok) return false;
+        if (data.length == 0) return true;
+        if (data.length < 32) return false;
+        return abi.decode(data, (bool));
     }
 
     /// @notice Claim a share whose automatic delivery failed.
@@ -417,6 +461,29 @@ contract LegacyKeeper {
             )
         );
 
+        require(_recover(digest, signature) == expectedSigner, "LK: invalid signature");
+    }
+
+    /// @dev Same as _consumeSignature with one address bound into the struct.
+    function _consumeAddressSignature(
+        bytes32 typehash,
+        address subject,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature,
+        address expectedSigner
+    ) private {
+        require(block.timestamp <= deadline, "LK: signature expired");
+        require(!nonceUsed[nonce], "LK: nonce used");
+        nonceUsed[nonce] = true;
+
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                domainSeparator(),
+                keccak256(abi.encode(typehash, subject, nonce, deadline))
+            )
+        );
         require(_recover(digest, signature) == expectedSigner, "LK: invalid signature");
     }
 
@@ -464,6 +531,7 @@ contract LegacyKeeper {
     function addBeneficiary(address wallet, uint16 shareBps) external onlyOwner {
         require(wallet != address(0), "LK: invalid wallet");
         require(!isBeneficiary[wallet], "LK: already beneficiary");
+        require(beneficiaries.length < MAX_BENEFICIARIES, "LK: too many beneficiaries");
         // Bound shareBps first so an oversized value reverts with a readable
         // reason instead of panicking on uint16 overflow in the sum below.
         require(shareBps > 0 && shareBps <= TOTAL_BPS, "LK: invalid share");
@@ -521,18 +589,71 @@ contract LegacyKeeper {
         emit TrackedTokensUpdated(trackedTokens.length);
     }
 
+    /**
+     * @notice Set the evacuation destination.
+     * @dev Owner-only until a recovery key exists. After that it needs the
+     *      recovery key, because redirecting the vault is equivalent to
+     *      stealing: a compromised owner key could otherwise point evacuation
+     *      at the attacker and sweep the estate using the very mechanism meant
+     *      to defend against them.
+     */
     function setSafeVault(address vaultAddress) external onlyOwner {
+        require(!vault.recoveryKeyRegistered, "LK: use setSafeVaultBySig");
         require(vaultAddress != address(0), "LK: invalid vault");
         vault.safeVault = vaultAddress;
         emit ConfigUpdated("safe_vault");
     }
 
+    /// @notice Change the vault with the recovery key's authorisation.
+    function setSafeVaultBySig(
+        address vaultAddress,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        require(vault.recoveryKeyRegistered, "LK: recovery key not set");
+        require(vaultAddress != address(0), "LK: invalid vault");
+        _consumeAddressSignature(
+            SET_VAULT_TYPEHASH, vaultAddress, nonce, deadline,
+            signature, vault.recoveryKeyAddress
+        );
+        vault.safeVault = vaultAddress;
+        emit ConfigUpdated("safe_vault");
+    }
+
+    /// @notice First registration only. Rotation requires the current key.
     function registerRecoveryKey(address recoveryKey) external onlyOwner {
+        require(!vault.recoveryKeyRegistered, "LK: use rotateRecoveryKey");
         require(recoveryKey != address(0), "LK: invalid recovery key");
         require(recoveryKey != owner, "LK: recovery must differ from owner");
         vault.recoveryKeyAddress = recoveryKey;
         vault.recoveryKeyRegistered = true;
         emit RecoveryKeyRegistered(recoveryKey);
+    }
+
+    /**
+     * @notice Rotate the recovery key, authorised by the CURRENT recovery key.
+     * @dev Deliberately not owner-callable. The whole premise of Mode B is that
+     *      it survives a compromised wallet key; if that key could re-point the
+     *      recovery key, the emergency path would defend against nobody.
+     */
+    function rotateRecoveryKey(
+        address newKey,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        require(vault.recoveryKeyRegistered, "LK: recovery key not set");
+        require(newKey != address(0), "LK: invalid recovery key");
+        require(newKey != owner, "LK: recovery must differ from owner");
+
+        _consumeAddressSignature(
+            ROTATE_RECOVERY_TYPEHASH, newKey, nonce, deadline,
+            signature, vault.recoveryKeyAddress
+        );
+
+        emit RecoveryKeyRotated(vault.recoveryKeyAddress, newKey);
+        vault.recoveryKeyAddress = newKey;
     }
 
     function setLivenessConfig(
@@ -552,10 +673,19 @@ contract LegacyKeeper {
         emit ConfigUpdated("liveness_active");
     }
 
+    /// @notice Step 1 of 2. Nothing changes until the recipient accepts.
     function transferOwnership(address newOwner) external onlyOwner {
         require(newOwner != address(0), "LK: invalid owner");
-        owner = newOwner;
+        pendingOwner = newOwner;
+        emit OwnershipTransferProposed(owner, newOwner);
+    }
+
+    /// @notice Step 2 of 2, called by the incoming owner.
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "LK: not pending owner");
         emit ConfigUpdated("owner");
+        owner = pendingOwner;
+        pendingOwner = address(0);
     }
 
     // ──────────────────────────────────────────────

@@ -155,8 +155,8 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
   describe('Mode B — evacuation', () => {
     it('BUG-06 (B3): a signature used for panicButton cannot also authorize evacuate', async () => {
       const { keeper, recovery, vault, owner, attacker } = await deployFixture();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
       await fund(keeper, owner);
 
       const deadline = (await time.latest()) + 3600;
@@ -173,13 +173,13 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
 
     it('BUG-07 (B4): a signature is bound to one contract and cannot be replayed to another', async () => {
       const { keeper, recovery, vault, owner, attacker } = await deployFixture();
-      await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
+      await keeper.registerRecoveryKey(recovery.address);
 
       const second: any = await ethers.deployContract('LegacyKeeper');
       await second.waitForDeployment();
-      await second.registerRecoveryKey(recovery.address);
       await second.setSafeVault(vault.address);
+      await second.registerRecoveryKey(recovery.address);
       await fund(second, owner);
 
       const deadline = (await time.latest()) + 3600;
