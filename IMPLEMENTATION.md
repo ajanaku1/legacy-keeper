@@ -40,3 +40,45 @@ Side effect: the brew transaction upgraded `simdjson` to 4.6.4, and the pre-exis
 4. `evacuate` looped every tracked token in one transaction — a long list could exceed block gas and brick the emergency path. Capped at 32 and added `evacuateToken` for granular recovery.
 5. Native dust is stranded after execution (accepted; recoverable via evacuation).
 6. `shareBps > 10000` panicked on uint16 overflow instead of reverting with a reason.
+
+## 2026-07-27 · Phase 3
+
+**UI direction selected outside the proposal gate.** The user rejected all three
+of my proposals and supplied `proposals/codex-option-b.html` from Codex. Adopted
+as the design of record — its accessibility work is better than mine (skip link,
+`aria-live` on the timer, `prefers-reduced-motion`, 44px targets), and inverting
+the execution record to dark makes the audit trail the visual climax.
+
+Design system ported verbatim into `dashboard/app/globals.css`. Every identifier
+now comes from chain state or the real audit ledger.
+
+**Correction to my own review of that file.** I claimed its KeeperHub execution
+IDs were fabricated. They were not — `tqba…8na`, `jvzd…ypj` and `2l4m…luz` all
+appear in `loop/memory/audit.jsonl`. I asserted it without checking. The
+genuinely illustrative parts were the contract address, beneficiary names and
+addresses, and the vault address.
+
+One claim was removed rather than reproduced: the proposal labelled an
+evacuation "private route". We have never verified that KeeperHub used a private
+submission path. The dashboard now says "private routing requested — flag set
+onchain; submission path is chosen by KeeperHub", which is what we can actually
+support.
+
+**Panic button cannot submit, by design.** Evacuation is authorised by the
+recovery key, which is deliberately not the key connected to the browser. The
+card prepares the request and hands off. Wiring a button that appears to
+evacuate but cannot would be the same class of dishonesty as a fake tx hash.
+
+**Toolchain deviations:**
+- Next pinned to `15.4.7`. In `15.5.22` the Turbopack build looks for
+  `server-external-packages.jsonc` while the package ships `.json`, so
+  `next build` fails outright. Upstream Next bug, not our config.
+- Tailwind dropped from the approved dependency list — the selected direction is
+  a hand-authored token system and Tailwind would fight it. Fewer dependencies
+  than approved, so no new proposal needed.
+- `@x402/evm` and `@coinbase/cdp-sdk` aliased to `false` in `next.config.mjs`.
+  Importing `injected()` from the `wagmi/connectors` barrel drags in Coinbase's
+  Base Account connector and its optional peers. Stubbing an unreachable branch
+  beats installing dependencies for a code path that never runs.
+
+**Added gate G7** (dashboard typecheck), for the same reason as G6.

@@ -84,6 +84,15 @@ else
   fail "G6 typecheck" "$(head -3 /tmp/lk-tsc.log | sed 's/^/          /')"
 fi
 
+# ── G7 · Dashboard typechecks ─────────────────────────────────────────
+if [ ! -d dashboard/node_modules ]; then
+  pass "G7 dashboard typecheck (skipped — not installed)"
+elif (cd dashboard && npx tsc --noEmit >/tmp/lk-dash-tsc.log 2>&1); then
+  pass "G7 dashboard typecheck"
+else
+  fail "G7 dashboard typecheck" "$(head -3 /tmp/lk-dash-tsc.log | sed 's/^/          /')"
+fi
+
 # ── G3 · No stub may return a success value ───────────────────────────
 # The previous build returned a hardcoded 0x + 'a'.repeat(64) as a tx hash.
 # Anything that fabricates success is a build failure, not scaffolding.

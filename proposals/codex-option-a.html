@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="LegacyKeeper Codex proposal A — a high-security dead-man's console.">
+  <title>LegacyKeeper — Codex A / Dead Man's Console</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;700&family=Syne:wght@600;700&display=swap");
+
+    :root {
+      --ink: #080806;
+      --panel: #11110d;
+      --panel-raised: #17160f;
+      --line: #3b351e;
+      --line-strong: #6e5b20;
+      --amber: #f6bb31;
+      --amber-hot: #ffd66f;
+      --amber-muted: #a77d20;
+      --paper: #f4eedc;
+      --muted: #b5ad94;
+      --danger: #ff624a;
+      --success: #9ecb72;
+      --focus: #ffe4a0;
+      --radius: 2px;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --text-xs: 11px;
+      --text-sm: 13px;
+      --text-base: 16px;
+      --text-display: clamp(42px, 7vw, 78px);
+      --ease-out: cubic-bezier(.22, 1, .36, 1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { color-scheme: dark; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      color: var(--paper);
+      background:
+        linear-gradient(rgba(246, 187, 49, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(246, 187, 49, .025) 1px, transparent 1px),
+        var(--ink);
+      background-size: 32px 32px;
+      font-family: "Chivo Mono", monospace;
+      font-size: var(--text-sm);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    button, input, a {
+      font: inherit;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button, a {
+      min-height: 44px;
+    }
+
+    button {
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      color: var(--paper);
+      background: var(--panel);
+      cursor: pointer;
+      transition: transform 150ms var(--ease-out), opacity 150ms var(--ease-out);
+    }
+
+    button:active { transform: scale(.98); }
+
+    :focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--ink), 0 0 0 4px var(--focus);
+    }
+
+    a { color: inherit; }
+
+    .skip-link {
+      position: fixed;
+      z-index: 20;
+      top: var(--space-2);
+      left: var(--space-2);
+      padding: var(--space-3);
+      color: var(--ink);
+      background: var(--amber-hot);
+      transform: translateY(-160%);
+      transition: transform 150ms var(--ease-out);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .topbar {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      min-height: 64px;
+      padding: 0 var(--space-6);
+      border-bottom: 1px solid var(--line-strong);
+      background: rgba(8, 8, 6, .94);
+      backdrop-filter: blur(12px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      font-family: "Syne", sans-serif;
+      font-size: var(--text-base);
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--amber);
+      color: var(--amber);
+      transform: rotate(45deg);
+    }
+
+    .brand-mark span { transform: rotate(-45deg); }
+
+    .network, .wallet {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--muted);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .network { justify-self: center; }
+    .wallet { justify-self: end; }
+
+    .lamp {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 0 3px rgba(158, 203, 114, .12);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: minmax(260px, 340px) minmax(540px, 1fr) minmax(250px, 310px);
+      gap: 1px;
+      max-width: 1680px;
+      min-height: calc(100vh - 64px);
+      margin: 0 auto;
+      background: var(--line);
+    }
+
+    .rail, .evidence, .panic-zone { background: var(--ink); }
+    .rail, .panic-zone { padding: var(--space-6); }
+    .evidence { padding: var(--space-6) var(--space-8); }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin: 0 0 var(--space-4);
+      color: var(--amber-muted);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .section-label::before {
+      content: "";
+      width: 20px;
+      height: 1px;
+      background: currentColor;
+    }
+
+    .countdown {
+      margin-bottom: var(--space-8);
+      padding: var(--space-6) 0;
+      border-block: 1px solid var(--line);
+    }
+
+    .countdown strong {
+      display: block;
+      color: var(--amber-hot);
+      font-family: "Syne", sans-serif;
+      font-size: var(--text-display);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      letter-spacing: -.06em;
+      line-height: .9;
+    }
+
+    .countdown small {
+      display: flex;
+      justify-content: space-between;
+      margin-top: var(--space-3);
+      color: var(--muted);
+      font-size: var(--text-xs);
+    }
+
+    .heartbeat {
+      width: 100%;
+      margin-top: var(--space-4);
+      padding: var(--space-3) var(--space-4);
+      color: var(--ink);
+      border-color: var(--amber);
+      background: var(--amber);
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .beneficiaries {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    .beneficiary {
+      padding: var(--space-4);
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .beneficiary-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+    }
+
+    .beneficiary strong { color: var(--paper); }
+    .beneficiary output { color: var(--amber); font-weight: 700; }
+
+    .address {
+      display: block;
+      margin: var(--space-2) 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: var(--text-xs);
+      text-overflow: ellipsis;
+    }
+
+    .beneficiary input {
+      width: 100%;
+      height: 44px;
+      accent-color: var(--amber);
+    }
+
+    .share-total {
+      display: flex;
+      justify-content: space-between;
+      margin-top: var(--space-3);
+      padding-top: var(--space-3);
+      border-top: 1px dashed var(--line-strong);
+      color: var(--success);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .evidence-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: var(--space-6);
+      margin-bottom: var(--space-6);
+    }
+
+    h1, h2, p { margin-top: 0; }
+
+    h1 {
+      max-width: 650px;
+      margin-bottom: var(--space-2);
+      font-family: "Syne", sans-serif;
+      font-size: clamp(28px, 4vw, 52px);
+      line-height: 1;
+      letter-spacing: -.04em;
+    }
+
+    .lede {
+      max-width: 650px;
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .proof-stamp {
+      flex: 0 0 auto;
+      padding: var(--space-3);
+      border: 1px solid var(--success);
+      color: var(--success);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      transform: rotate(-2deg);
+    }
+
+    .attempt-chain {
+      display: grid;
+      grid-template-columns: 88px 1fr auto;
+      gap: var(--space-4);
+      align-items: center;
+      margin-bottom: var(--space-4);
+      padding: var(--space-4);
+      border-left: 3px solid var(--amber);
+      background: var(--panel-raised);
+    }
+
+    .attempt-chain .number {
+      color: var(--amber);
+      font-family: "Syne", sans-serif;
+      font-size: 28px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+
+    .attempt-chain p { margin: 0; }
+    .attempt-chain small {
+      display: block;
+      margin-top: var(--space-1);
+      color: var(--muted);
+      font-size: var(--text-xs);
+    }
+
+    .retry-route {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--success);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .log {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--text-xs);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .log th {
+      padding: var(--space-3);
+      color: var(--amber-muted);
+      border-bottom: 1px solid var(--line-strong);
+      text-align: left;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .log td {
+      padding: var(--space-4) var(--space-3);
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    .log tbody tr { background: rgba(17, 17, 13, .7); }
+    .log tbody tr:nth-child(even) { background: rgba(23, 22, 15, .75); }
+    .action { color: var(--paper); font-weight: 700; }
+    .meta { display: block; margin-top: var(--space-1); color: var(--muted); }
+
+    .state {
+      display: inline-flex;
+      gap: var(--space-2);
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .state::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border: 1px solid currentColor;
+    }
+
+    .state.failed { color: var(--danger); }
+    .state.success { color: var(--success); }
+    .state.success::before { background: currentColor; }
+
+    .hash {
+      color: var(--amber-hot);
+      text-underline-offset: 3px;
+    }
+
+    .panic-zone {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+      overflow: hidden;
+    }
+
+    .panic-zone::after {
+      content: "RECOVERY KEY";
+      position: absolute;
+      right: -44px;
+      bottom: 120px;
+      color: rgba(246, 187, 49, .07);
+      font-family: "Syne", sans-serif;
+      font-size: 52px;
+      font-weight: 700;
+      line-height: .8;
+      writing-mode: vertical-rl;
+      pointer-events: none;
+    }
+
+    .vault-readout {
+      margin-bottom: auto;
+      padding: var(--space-4);
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .vault-readout strong { display: block; margin-bottom: var(--space-2); }
+    .vault-readout span { color: var(--muted); font-size: var(--text-xs); }
+
+    .safety {
+      position: relative;
+      z-index: 1;
+      margin-top: var(--space-8);
+      padding: var(--space-4);
+      border: 1px solid var(--danger);
+      background:
+        repeating-linear-gradient(-45deg, transparent 0 10px, rgba(255, 98, 74, .08) 10px 20px),
+        var(--panel);
+    }
+
+    .safety h2 {
+      margin-bottom: var(--space-2);
+      font-family: "Syne", sans-serif;
+      font-size: var(--text-base);
+    }
+
+    .safety p { color: var(--muted); font-size: var(--text-xs); }
+
+    .panic-button {
+      width: 100%;
+      padding: var(--space-4);
+      border-color: var(--danger);
+      color: var(--ink);
+      background: var(--danger);
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .preview-note {
+      margin: var(--space-3) 0 0;
+      color: var(--muted);
+      font-size: var(--text-xs);
+    }
+
+    dialog {
+      width: min(520px, calc(100% - 32px));
+      padding: 0;
+      border: 1px solid var(--danger);
+      border-radius: var(--radius);
+      color: var(--paper);
+      background: var(--panel-raised);
+      box-shadow: 0 20px 70px rgba(0, 0, 0, .6);
+    }
+
+    dialog::backdrop { background: rgba(0, 0, 0, .78); backdrop-filter: blur(4px); }
+
+    .confirm-head {
+      padding: var(--space-6);
+      border-bottom: 1px solid var(--line);
+      background: repeating-linear-gradient(-45deg, rgba(255,98,74,.08) 0 10px, transparent 10px 20px);
+    }
+
+    .confirm-head h2 {
+      margin-bottom: var(--space-2);
+      font-family: "Syne", sans-serif;
+      font-size: 28px;
+    }
+
+    .confirm-head p { margin-bottom: 0; color: var(--muted); }
+    .checklist { margin: 0; padding: var(--space-6) var(--space-6) var(--space-4) 44px; }
+    .checklist li { margin-bottom: var(--space-2); }
+
+    .confirm-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-3);
+      padding: var(--space-4) var(--space-6) var(--space-6);
+    }
+
+    .confirm-actions button { padding: var(--space-3); }
+    .confirm-action { border-color: var(--danger); color: var(--ink); background: var(--danger); font-weight: 700; }
+
+    .toast {
+      position: fixed;
+      z-index: 30;
+      right: var(--space-6);
+      bottom: var(--space-6);
+      max-width: 360px;
+      padding: var(--space-4);
+      border: 1px solid var(--amber);
+      color: var(--ink);
+      background: var(--amber-hot);
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(140%);
+      transition: transform 200ms var(--ease-out), opacity 150ms var(--ease-out);
+    }
+
+    .toast.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 1120px) {
+      .shell { grid-template-columns: 320px 1fr; }
+      .panic-zone { grid-column: 1 / -1; min-height: auto; }
+      .panic-zone::after { display: none; }
+      .vault-readout { margin-bottom: var(--space-6); }
+    }
+
+    @media (max-width: 760px) {
+      .topbar { grid-template-columns: 1fr auto; padding: 0 var(--space-4); }
+      .network { display: none; }
+      .shell { display: block; }
+      .rail, .evidence, .panic-zone { padding: var(--space-4); }
+      .evidence { border-block: 1px solid var(--line); }
+      .evidence-header { display: block; }
+      .proof-stamp { display: inline-block; margin-top: var(--space-4); }
+      .attempt-chain { grid-template-columns: 1fr; }
+      .retry-route { grid-column: 1; }
+      .log { display: block; overflow-x: auto; }
+      .wallet span:last-child { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to execution evidence</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><span>LK</span></span>
+      LegacyKeeper
+    </div>
+    <div class="network"><span class="lamp" aria-hidden="true"></span>Sepolia · KeeperHub online</div>
+    <div class="wallet"><span>Protected wallet</span><strong>0x71F4…9C20</strong></div>
+  </header>
+
+  <main class="shell" id="main">
+    <aside class="rail" aria-labelledby="liveness-title">
+      <p class="section-label">Dead-man circuit / 01</p>
+      <section class="countdown">
+        <h2 id="liveness-title">Liveness window</h2>
+        <strong id="countdown" aria-live="polite">11:06:42</strong>
+        <small><span>days : hours : minutes</span><span>grace + 48h</span></small>
+        <button class="heartbeat" id="heartbeat" type="button">I’m safe — send heartbeat</button>
+      </section>
+
+      <p class="section-label">Distribution circuit / 02</p>
+      <section aria-labelledby="beneficiary-title">
+        <h2 id="beneficiary-title">Beneficiary configuration</h2>
+        <div class="beneficiaries">
+          <label class="beneficiary">
+            <span class="beneficiary-head"><strong>Mara</strong><output id="share-one">60%</output></span>
+            <span class="address">0x8A12…4F9B</span>
+            <input id="beneficiary-one" type="range" min="10" max="90" value="60" aria-label="Mara inheritance share">
+          </label>
+          <label class="beneficiary">
+            <span class="beneficiary-head"><strong>Sol Foundation</strong><output id="share-two">40%</output></span>
+            <span class="address">0x3D70…81AC</span>
+            <input id="beneficiary-two" type="range" min="10" max="90" value="40" aria-label="Sol Foundation inheritance share">
+          </label>
+        </div>
+        <div class="share-total"><span>✓ Invariant satisfied</span><span>10,000 bps</span></div>
+      </section>
+    </aside>
+
+    <section class="evidence" aria-labelledby="evidence-title">
+      <div class="evidence-header">
+        <div>
+          <p class="section-label">Primary evidence surface</p>
+          <h1 id="evidence-title">Nothing is trusted. Everything is recorded.</h1>
+          <p class="lede">KeeperHub simulation, retry, gas and transaction proof remain bound to each execution.</p>
+        </div>
+        <div class="proof-stamp">✓ Real ledger data</div>
+      </div>
+
+      <article class="attempt-chain">
+        <div class="number">01→04</div>
+        <p><strong>Inheritance recovered after retry</strong><small>Three “not yet due” failures preserved before the successful fourth attempt.</small></p>
+        <div class="retry-route">■ failed &nbsp;→&nbsp; ■ landed</div>
+      </article>
+
+      <table class="log">
+        <thead>
+          <tr><th>Time / attempt</th><th>Trigger & action</th><th>Outcome</th><th>Proof</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>20:51:54<small class="meta">attempt 04</small></td>
+            <td><span class="action">executeInheritance</span><small class="meta">scheduled · cron</small></td>
+            <td><span class="state success">Succeeded</span><small class="meta">156,896 gas</small></td>
+            <td><a class="hash" href="https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc">0x3e85…51bc ↗</a><small class="meta">KeeperHub tqba…8na</small></td>
+          </tr>
+          <tr>
+            <td>20:48:59<small class="meta">attempt 03</small></td>
+            <td><span class="action">executeInheritance</span><small class="meta">scheduled · cron</small></td>
+            <td><span class="state failed">Failed</span><small class="meta">LK: not yet due</small></td>
+            <td>no transaction<small class="meta">KeeperHub jvzd…ypj</small></td>
+          </tr>
+          <tr>
+            <td>20:18:27<small class="meta">attempt 01</small></td>
+            <td><span class="action">evacuate</span><small class="meta">panic · private route</small></td>
+            <td><span class="state success">Succeeded</span><small class="meta">124,414 gas</small></td>
+            <td><a class="hash" href="https://sepolia.etherscan.io/tx/0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f257bba6ffd">0x9fe4…6ffd ↗</a><small class="meta">KeeperHub 60t5…xaq</small></td>
+          </tr>
+          <tr>
+            <td>20:16:32<small class="meta">attempt 01</small></td>
+            <td><span class="action">heartbeatBySig</span><small class="meta">manual · relayed</small></td>
+            <td><span class="state success">Succeeded</span><small class="meta">83,606 gas</small></td>
+            <td><a class="hash" href="https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598">0x0041…a598 ↗</a><small class="meta">KeeperHub 2l4m…luz</small></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <aside class="panic-zone" aria-labelledby="panic-title">
+      <p class="section-label">Evacuation circuit / 03</p>
+      <div class="vault-readout">
+        <strong>Safe vault armed</strong>
+        <span>0x0E42…91D7</span>
+        <span class="state success">Recovery key verified</span>
+      </div>
+      <section class="safety">
+        <h2 id="panic-title">Wallet compromised?</h2>
+        <p>Private routing moves approved assets to the safe vault using the separate recovery key.</p>
+        <button class="panic-button" id="open-panic" type="button">Lift cover · panic</button>
+        <p class="preview-note" id="panic-status">Two-step confirmation required.</p>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="panic-dialog" aria-labelledby="confirm-title">
+    <div class="confirm-head">
+      <p class="section-label">Emergency confirmation</p>
+      <h2 id="confirm-title">Evacuate the protected wallet?</h2>
+      <p>This preview shows the safety step. It cannot submit a transaction.</p>
+    </div>
+    <ul class="checklist">
+      <li>Destination: safe vault 0x0E42…91D7</li>
+      <li>Authorization: separate recovery key</li>
+      <li>Route: KeeperHub private execution</li>
+    </ul>
+    <div class="confirm-actions">
+      <button id="cancel-panic" type="button">Cancel</button>
+      <button class="confirm-action" id="confirm-panic" type="button">Confirm preview</button>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status">Preview confirmed. No transaction was submitted.</div>
+
+  <script>
+    const countdown = document.querySelector("#countdown");
+    const heartbeat = document.querySelector("#heartbeat");
+    const firstShare = document.querySelector("#beneficiary-one");
+    const secondShare = document.querySelector("#beneficiary-two");
+    const firstOutput = document.querySelector("#share-one");
+    const secondOutput = document.querySelector("#share-two");
+    const dialog = document.querySelector("#panic-dialog");
+    const toast = document.querySelector("#toast");
+    let remainingMinutes = 11 * 24 * 60 + 6 * 60 + 42;
+
+    function renderCountdown() {
+      const days = Math.floor(remainingMinutes / 1440);
+      const hours = Math.floor((remainingMinutes % 1440) / 60);
+      const minutes = remainingMinutes % 60;
+      countdown.textContent = `${String(days).padStart(2, "0")}:${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+
+    function syncShares(source) {
+      const firstValue = source === firstShare ? Number(firstShare.value) : 100 - Number(secondShare.value);
+      firstShare.value = String(firstValue);
+      secondShare.value = String(100 - firstValue);
+      firstOutput.value = `${firstValue}%`;
+      secondOutput.value = `${100 - firstValue}%`;
+    }
+
+    function resetHeartbeat() {
+      remainingMinutes = 30 * 24 * 60;
+      renderCountdown();
+      heartbeat.textContent = "Heartbeat previewed ✓";
+    }
+
+    function confirmPreview() {
+      dialog.close();
+      toast.classList.add("visible");
+      document.querySelector("#panic-status").textContent = "Preview only — no action sent.";
+      window.setTimeout(() => toast.classList.remove("visible"), 3000);
+    }
+
+    firstShare.addEventListener("input", () => syncShares(firstShare));
+    secondShare.addEventListener("input", () => syncShares(secondShare));
+    heartbeat.addEventListener("click", resetHeartbeat);
+    document.querySelector("#open-panic").addEventListener("click", () => dialog.showModal());
+    document.querySelector("#cancel-panic").addEventListener("click", () => dialog.close());
+    document.querySelector("#confirm-panic").addEventListener("click", confirmPreview);
+    window.setInterval(() => {
+      remainingMinutes = Math.max(0, remainingMinutes - 1);
+      renderCountdown();
+    }, 60000);
+  </script>
+</body>
+</html>
