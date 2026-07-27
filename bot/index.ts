@@ -1,220 +1,230 @@
 /**
- * LegacyKeeper Telegram Bot
+ * LegacyKeeper Telegram bot — real long-polling against the Bot API.
  *
- * Handles:
- * - Alert delivery (heartbeat reminders, grace period, inheritance, evacuation)
- * - Panic trigger (/panic command)
- * - Check-in (/heartbeat command)
- * - Status queries (/status)
- * - Cancel inheritance (/cancel)
+ * Every command reads live chain state or drives a real KeeperHub workflow.
+ * Nothing here reports an outcome it did not observe.
  *
- * Commands:
- *   /start   — Initialize the bot
- *   /status  — Check liveness and config status
- *   /panic   — 🚨 TRIGGER EMERGENCY EVACUATION
- *   /checkin — Record a heartbeat manually
- *   /cancel  — Cancel pending inheritance
- *   /config  — View current configuration
- *   /help    — Show available commands
+ * The panic command deliberately cannot evacuate on its own: evacuation needs
+ * the recovery key, which does not live in a chat client. /panic prepares and
+ * hands off. A bot that appeared to evacuate would be lying about its reach.
  */
+
+import { LivenessMonitor, LivenessState } from '../agent/liveness/monitor';
+
+const API = 'https://api.telegram.org';
 
 export interface BotConfig {
   botToken: string;
   allowedChatIds: string[];
   contractAddress: string;
-  ownerAddress: string;
+  rpcUrl: string;
+  /** Webhook URL of the KeeperHub panic-evacuation workflow, if configured. */
+  panicWebhookUrl?: string;
+  explorerBaseUrl?: string;
 }
 
-export interface BotMessage {
-  chatId: string;
-  text: string;
-  parseMode?: 'Markdown' | 'HTML';
+interface Update {
+  update_id: number;
+  message?: { chat: { id: number }; text?: string };
 }
 
 export class LegacyKeeperBot {
-  private config: BotConfig;
-  private panicCallback?: (chatId: string) => Promise<boolean>;
-  private heartbeatCallback?: () => Promise<boolean>;
-  private cancelCallback?: () => Promise<boolean>;
+  private readonly monitor: LivenessMonitor;
+  private offset = 0;
+  private running = false;
 
-  constructor(config: BotConfig) {
-    this.config = config;
+  constructor(private readonly config: BotConfig) {
+    if (!config.botToken) throw new Error('BotConfig.botToken is required');
+    this.monitor = new LivenessMonitor(config.rpcUrl, config.contractAddress);
   }
 
-  /**
-   * Register callbacks
-   */
-  onPanic(callback: (chatId: string) => Promise<boolean>): void {
-    this.panicCallback = callback;
-  }
-
-  onHeartbeat(callback: () => Promise<boolean>): void {
-    this.heartbeatCallback = callback;
-  }
-
-  onCancel(callback: () => Promise<boolean>): void {
-    this.cancelCallback = callback;
-  }
-
-  /**
-   * Start the bot
-   */
+  /** Verifies the token before claiming to be online. */
   async start(): Promise<void> {
-    console.log('[LegacyKeeperBot] Starting...');
-    console.log('[LegacyKeeperBot] Bot configured for chat IDs:', this.config.allowedChatIds);
-    console.log('[LegacyKeeperBot] Listening for commands...');
+    const me = await this.api<{ username: string }>('getMe');
+    console.log(`[bot] connected as @${me.username}`);
+    console.log(`[bot] authorised chats: ${this.config.allowedChatIds.join(', ') || 'NONE'}`);
 
-    // In production, this uses node-telegram-bot-api or telegraf
-    // Polling updates from Telegram API
+    this.running = true;
+    while (this.running) {
+      try {
+        const updates = await this.api<Update[]>('getUpdates', {
+          offset: this.offset,
+          timeout: 30,
+          allowed_updates: ['message'],
+        });
+        for (const update of updates) {
+          this.offset = update.update_id + 1;
+          await this.handle(update).catch((e) => console.error('[bot] handler:', e));
+        }
+      } catch (error) {
+        console.error('[bot] poll failed:', error);
+        await new Promise((r) => setTimeout(r, 5000));
+      }
+    }
   }
 
-  /**
-   * Send a message to allowed chats
-   */
-  async sendMessage(message: BotMessage): Promise<boolean> {
-    console.log(`[Bot] Sending to ${message.chatId}: ${message.text.substring(0, 100)}`);
-    // POST https://api.telegram.org/bot${TOKEN}/sendMessage
-    return true;
+  stop(): void {
+    this.running = false;
   }
 
-  /**
-   * Broadcast to all allowed chats
-   */
-  async broadcast(text: string, parseMode?: BotMessage['parseMode']): Promise<void> {
-    const promises = this.config.allowedChatIds.map((chatId) =>
-      this.sendMessage({ chatId, text, parseMode })
-    );
-    await Promise.all(promises);
-  }
+  private async handle(update: Update): Promise<void> {
+    const chatId = String(update.message?.chat?.id ?? '');
+    const text = (update.message?.text ?? '').trim();
+    if (!chatId || !text.startsWith('/')) return;
 
-  /**
-   * Handle an incoming command
-   */
-  async handleCommand(chatId: string, command: string, args: string[]): Promise<string> {
     if (!this.config.allowedChatIds.includes(chatId)) {
-      return '⛔ Unauthorized. Your chat ID is not registered.';
+      await this.send(chatId, `Unauthorised. This chat (\`${chatId}\`) is not registered.`);
+      return;
     }
 
+    const command = text.split(/\s+/)[0].split('@')[0];
+    await this.send(chatId, await this.respond(command, chatId));
+  }
+
+  private async respond(command: string, chatId: string): Promise<string> {
     switch (command) {
       case '/start':
-        return this.handleStart();
-      case '/status':
-        return this.handleStatus();
-      case '/panic':
-        return this.handlePanic(chatId);
-      case '/checkin':
-        return this.handleCheckin();
-      case '/cancel':
-        return this.handleCancel();
-      case '/config':
-        return this.handleConfig();
       case '/help':
-        return this.handleHelp();
+        return [
+          '*LegacyKeeper*',
+          '',
+          '/status — live liveness and configuration',
+          '/checkin — how to reset the timer',
+          '/panic — prepare an emergency evacuation',
+          '/config — contract and vault details',
+        ].join('\n');
+
+      case '/status':
+        return this.statusMessage();
+
+      case '/checkin':
+        return [
+          '*Check in*',
+          '',
+          'Open the dashboard and press “Check in safely”, or relay a signed',
+          'heartbeat through the KeeperHub workflow. Either resets the timer;',
+          'KeeperHub sponsors the gas, so you never need a funded wallet.',
+        ].join('\n');
+
+      case '/panic':
+        return this.panicMessage(chatId);
+
+      case '/config':
+        return this.configMessage();
+
       default:
-        return 'Unknown command. Send /help for available commands.';
+        return 'Unknown command. Send /help.';
     }
   }
 
-  private handleStart(): string {
-    return (
-      '*🔐 LegacyKeeper Bot active*\n\n' +
-      'I monitor your onchain liveness and handle emergency evacuation.\n\n' +
-      '*/status* — Check everything\n' +
-      '*/checkin* — Send a heartbeat\n' +
-      '*/panic* — Emergency evacuation\n' +
-      '*/cancel* — Cancel inheritance\n' +
-      '*/help* — Show all commands'
-    );
-  }
-
-  private async handleStatus(): Promise<string> {
-    const status = {
-      contract: this.config.contractAddress,
-      owner: this.config.ownerAddress,
-      liveness: 'active',
-      lastHeartbeat: '23 minutes ago',
-      timeout: '30 days',
-      gracePeriod: '7 days',
-      beneficiaries: 3,
-      recoveryKey: 'registered',
-      safeVault: 'configured',
-    };
-
-    return (
-      '*📊 LegacyKeeper Status*\n\n' +
-      `Contract: \`${status.contract}\`\n` +
-      `Owner: \`${status.owner}\`\n` +
-      `Liveness: ✅ *${status.liveness}*\n` +
-      `Heartbeat: ${status.lastHeartbeat}\n` +
-      `Timeout: ${status.timeout}\n` +
-      `Grace Period: ${status.gracePeriod}\n` +
-      `Beneficiaries: ${status.beneficiaries}\n` +
-      `Recovery Key: ✅ *${status.recoveryKey}*\n` +
-      `Safe Vault: ✅ *${status.safeVault}*`
-    );
-  }
-
-  private async handlePanic(chatId: string): Promise<string> {
-    if (!this.panicCallback) {
-      return '❌ Panic handler not configured.';
+  private async statusMessage(): Promise<string> {
+    let s: LivenessState;
+    try {
+      s = await this.monitor.evaluate();
+    } catch (error) {
+      return `Could not read chain state.\n\n\`${error instanceof Error ? error.message : error}\``;
     }
 
-    const confirmed = await this.panicCallback(chatId);
+    if (s.evacuationExecuted) return '*Evacuated.* Assets were swept to the safe vault.';
+    if (s.inheritanceExecuted) return '*Distributed.* The estate has been settled.';
 
-    if (confirmed) {
-      return (
-        '🚨 *EMERGENCY EVACUATION TRIGGERED*\n\n' +
-        'All assets are being transferred to your safe vault via KeeperHub private routing.\n' +
-        'You will receive a confirmation when the transaction completes.'
-      );
-    }
+    const phase = !s.active
+      ? 'Paused'
+      : s.graceElapsed
+      ? 'DUE — distribution is callable now'
+      : s.timeoutExceeded
+      ? 'GRACE PERIOD — check in to cancel'
+      : 'Active';
 
-    return '❌ Evacuation failed. Check logs for details.';
+    return [
+      `*Status:* ${phase}`,
+      '',
+      `Last heartbeat: ${fmtAgo(s.timeSinceHeartbeat)} ago`,
+      `Time remaining: ${fmtDuration(s.secondsUntilDue)}`,
+      `Timeout / grace: ${fmtDuration(s.timeoutDuration)} / ${fmtDuration(s.gracePeriod)}`,
+      `Shares configured: ${s.configComplete ? 'complete' : 'INCOMPLETE — execution would revert'}`,
+    ].join('\n');
   }
 
-  private async handleCheckin(): Promise<string> {
-    if (!this.heartbeatCallback) {
-      return '❌ Heartbeat handler not configured.';
+  private async panicMessage(chatId: string): Promise<string> {
+    if (!this.config.panicWebhookUrl) {
+      return [
+        '*Emergency evacuation*',
+        '',
+        'No panic workflow is configured, so nothing can be triggered from here.',
+        'Set the KeeperHub panic webhook URL to enable this path.',
+      ].join('\n');
     }
 
-    const recorded = await this.heartbeatCallback();
-    if (recorded) {
-      return '✅ *Heartbeat recorded!* Your liveness timer has been reset.';
+    return [
+      '*Emergency evacuation — action required*',
+      '',
+      'Evacuation is authorised by your *recovery key*, which is deliberately',
+      'not held by this bot. That separation is what makes the emergency path',
+      'survive a compromised wallet.',
+      '',
+      'Sign the evacuation payload with your recovery key and post it to the',
+      'panic workflow. The dashboard does this for you.',
+      '',
+      `Chat \`${chatId}\` is authorised to request it.`,
+    ].join('\n');
+  }
+
+  private async configMessage(): Promise<string> {
+    const explorer = this.config.explorerBaseUrl ?? 'https://sepolia.etherscan.io';
+    return [
+      '*Configuration*',
+      '',
+      `Contract: \`${this.config.contractAddress}\``,
+      `${explorer}/address/${this.config.contractAddress}`,
+      '',
+      'Change beneficiaries, vault, or timings from the dashboard.',
+    ].join('\n');
+  }
+
+  async send(chatId: string, text: string): Promise<boolean> {
+    try {
+      await this.api('sendMessage', {
+        chat_id: chatId,
+        text,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: true,
+      });
+      return true;
+    } catch (error) {
+      console.error('[bot] send failed:', error);
+      return false;
     }
-    return '❌ Failed to record heartbeat.';
   }
 
-  private async handleCancel(): Promise<string> {
-    if (!this.cancelCallback) {
-      return '❌ Cancel handler not configured.';
+  async broadcast(text: string): Promise<void> {
+    await Promise.all(this.config.allowedChatIds.map((id) => this.send(id, text)));
+  }
+
+  private async api<T>(method: string, body?: Record<string, unknown>): Promise<T> {
+    const response = await fetch(`${API}/bot${this.config.botToken}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+    const payload = (await response.json()) as { ok: boolean; result?: T; description?: string };
+    if (!payload.ok) {
+      throw new Error(`telegram ${method}: ${payload.description ?? response.status}`);
     }
-
-    const cancelled = await this.cancelCallback();
-    if (cancelled) {
-      return '✅ *Inheritance cancelled.* Grace period has been reset.';
-    }
-    return '❌ No pending inheritance to cancel.';
+    return payload.result as T;
   }
+}
 
-  private handleConfig(): string {
-    return (
-      '*⚙️ Configuration*\n\n' +
-      `Contract: \`${this.config.contractAddress}\`\n` +
-      `Owner: \`${this.config.ownerAddress}\`\n` +
-      'Use the web dashboard to modify settings.'
-    );
-  }
+function fmtDuration(seconds: number): string {
+  if (seconds <= 0) return 'due now';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
 
-  private handleHelp(): string {
-    return (
-      '*Available Commands*\n\n' +
-      '*/start* — Initialize bot\n' +
-      '*/status* — Current liveness and config status\n' +
-      '*/checkin* — Record a heartbeat\n' +
-      '*/panic* — 🚨 Emergency evacuation\n' +
-      '*/cancel* — Cancel pending inheritance\n' +
-      '*/config* — View configuration\n' +
-      '*/help* — Show this message'
-    );
-  }
+function fmtAgo(seconds: number): string {
+  return fmtDuration(seconds) === 'due now' ? 'moments' : fmtDuration(seconds);
 }
