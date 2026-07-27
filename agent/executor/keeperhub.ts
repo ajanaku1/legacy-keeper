@@ -42,7 +42,17 @@ export interface ContractCallOptions {
   maxAttempts?: number;
 }
 
-const TERMINAL_STATUSES = ['success', 'failed', 'reverted', 'cancelled'];
+// KeeperHub reports 'completed' for a settled direct execution — whether the
+// call itself succeeded is a separate `result.success` field. Treating
+// 'completed' as non-terminal makes the poller wait out its whole timeout on
+// a transaction that already landed.
+const TERMINAL_STATUSES = [
+  'completed',
+  'success',
+  'failed',
+  'reverted',
+  'cancelled',
+];
 
 interface Settlement {
   outcome: Outcome;
@@ -96,11 +106,20 @@ export class KeeperHubExecutor {
     params: { nonce: number; deadline: number; signature: string },
     trigger: TriggerInfo
   ): Promise<ExecutionResult> {
+    return this.heartbeatBySigWithOptions(params, trigger, {});
+  }
+
+  /** Same, with gas controls exposed — used to exercise the failure path. */
+  async heartbeatBySigWithOptions(
+    params: { nonce: number; deadline: number; signature: string },
+    trigger: TriggerInfo,
+    options: ContractCallOptions
+  ): Promise<ExecutionResult> {
     return this.contractCall(
       'heartbeatBySig',
       [params.nonce, params.deadline, params.signature],
       trigger,
-      {}
+      options
     );
   }
 
@@ -163,11 +182,17 @@ export class KeeperHubExecutor {
           function_args: JSON.stringify(args),
           idempotency_key: executionKey,
         };
-        if (options.gasLimitMultiplier !== undefined) {
-          payload.gas_limit_multiplier = options.gasLimitMultiplier;
+        // Every scalar on this tool is string-typed, gas knobs included.
+        //
+        // A caller-supplied gas hint applies to the FIRST attempt only. If it
+        // fails we drop the override and let KeeperHub's estimator size the
+        // retry — a keeper whose own gas guess was wrong should defer to the
+        // estimator rather than repeat the same mistake three times.
+        if (options.gasLimitMultiplier !== undefined && attempt === 1) {
+          payload.gas_limit_multiplier = String(options.gasLimitMultiplier);
         }
         if (options.priorityFeeGwei !== undefined) {
-          payload.priority_fee_gwei = options.priorityFeeGwei;
+          payload.priority_fee_gwei = String(options.priorityFeeGwei);
         }
         if (options.value !== undefined) payload.value = options.value;
 
@@ -248,12 +273,27 @@ export class KeeperHubExecutor {
       ).toLowerCase();
 
       if (TERMINAL_STATUSES.includes(status)) {
+        // 'completed' only means settled. Whether the call itself worked is
+        // result.success / result.reverted, so read those before claiming it.
+        const inner = parsed?.result ?? {};
+        const reverted = inner.reverted === true;
+        const succeeded =
+          status === 'success' ||
+          (status === 'completed' && inner.success !== false && !reverted);
+
         return {
-          outcome: status === 'success' ? 'success' : (status as Outcome),
-          txHash: parsed?.tx_hash ?? parsed?.txHash,
-          gasUsed: parsed?.gas_used?.toString() ?? parsed?.gasUsed?.toString(),
+          outcome: succeeded ? 'success' : reverted ? 'reverted' : 'failed',
+          txHash:
+            parsed?.transactionHash ??
+            inner.transactionHash ??
+            parsed?.tx_hash ??
+            parsed?.txHash,
+          gasUsed:
+            parsed?.gasUsedWei?.toString() ??
+            inner.gasUsed?.toString() ??
+            parsed?.gas_used?.toString(),
           blockNumber: parsed?.block_number ?? parsed?.blockNumber,
-          error: parsed?.error ?? parsed?.failure_reason,
+          error: parsed?.error ?? parsed?.failure_reason ?? inner.revertReason,
         };
       }
 

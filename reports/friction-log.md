@@ -8,7 +8,62 @@ posting checkpoint). Raw notes here are cheap; reconstructing them later is not.
 
 ## 01 · Where gas sponsorship applies is ambiguous
 
-**Status:** open question, needs empirical confirmation in Phase 2.
+**Status:** RESOLVED empirically — sponsorship works on Sepolia.
+
+A real `execute_contract_call` on Sepolia returned `"sponsored": true` with
+`estimatedCostUsd: null`
+([tx](https://sepolia.etherscan.io/tx/0xb4d16c35912d75f032a483d1974857d5db03d51358326aeeb96b3a0c9a191be3)).
+Sponsorship is **not** limited to Base/Tempo as the agentic-wallet page implies.
+
+The docs gap is still worth reporting: those pages describe x402/MPP
+facilitators covering gas on Base and Tempo and state "other chains are not
+yet supported", which reads as a global constraint but describes only the
+agentic-wallet payment path. A builder deciding whether gasless relaying is
+viable on a testnet will conclude it is not, and be wrong.
+
+**Suggested fix:** scope that sentence explicitly to the agentic wallet, and
+state on the MCP page that direct executions are sponsored on supported EVM
+networks including Sepolia.
+
+---
+
+## 05 · `gas_limit_multiplier` is clamped — you cannot underprice into a stuck tx
+
+**Status:** confirmed. Positive finding, worth documenting as a feature.
+
+Attempting to induce a stuck transaction by starving gas failed at every level
+tried — `0.3`, then `0.02`. All landed successfully. KeeperHub appears to floor
+the multiplier at whatever its estimator considers safe.
+
+This is exactly the "transactions execute instead of getting stuck" promise,
+and it holds under deliberate attack. Worth stating outright in the docs: the
+multiplier can raise a gas limit but cannot lower it below a safe floor.
+
+Consequence for builders: **you cannot use `gas_limit_multiplier` to test your
+own failure handling.** We had to reach for a different failure vector to
+exercise our retry path.
+
+---
+
+## 06 · `status: "completed"` does not mean the call succeeded
+
+**Status:** confirmed. Cost us a real bug.
+
+`get_direct_execution_status` returns `status: "completed"` for a settled
+execution, with success or failure carried separately in `result.success` and
+`result.reverted`. A poller that treats `"completed"` as terminal-and-successful
+is wrong, and one that omits it from its terminal set — as ours initially did —
+waits out its entire timeout on a transaction that already landed, then reports
+failure for a success.
+
+Reporting a false *failure* is as damaging as a false success: an agent that
+believes an irreversible action failed may try to compensate for something that
+already happened.
+
+**Suggested fix:** document the status vocabulary and the
+`status` vs `result.success` split on the MCP page.
+
+---
 
 The hackathon brief states *"KeeperHub offers gas sponsorship on mainnet
 Ethereum."* The agentic-wallet docs describe gas being covered by the x402
@@ -46,7 +101,7 @@ MCP error -32602: Input validation error:
   function_args: expected string, received array
 ```
 
-Both must be **strings**, and `function_args` must be a JSON array *encoded as
+`gas_limit_multiplier` is affected too. Every scalar on this tool must be a **string**, and `function_args` must be a JSON array *encoded as
 a string*:
 
 ```jsonc
