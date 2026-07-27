@@ -1,0 +1,35 @@
+{
+  "name": "keeperhub-mcp",
+  "version": "0.1.0",
+  "description": "KeeperHub MCP server configuration for LegacyKeeper agent",
+  "mcp": {
+    "transport": "http",
+    "url": "https://app.keeperhub.com/mcp",
+    "headers": {
+      "X-Api-Key": "${KEEPERHUB_API_KEY}"
+    }
+  },
+  "capabilities": {
+    "workflows": {
+      "create": true,
+      "list": true,
+      "get": true,
+      "trigger": true,
+      "delete": true
+    },
+    "executions": {
+      "list": true,
+      "getLogs": true,
+      "cancel": true
+    },
+    "secrets": {
+      "set": true,
+      "get": true
+    }
+  },
+  "defaults": {
+    "execution_mode": "isolated",
+    "gas_sponsorship": true,
+    "private_routing": true
+  }
+}

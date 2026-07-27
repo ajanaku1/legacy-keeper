@@ -1,0 +1,166 @@
+{
+  "name": "LegacyKeeper — Liveness Monitor & Inheritance",
+  "description": "Scheduled workflow that checks onchain heartbeat status and triggers inheritance if the timeout + grace period has elapsed.",
+  "version": "0.1.0",
+  "triggers": [
+    {
+      "type": "cron",
+      "schedule": "0 */6 * * *",
+      "description": "Check heartbeat every 6 hours"
+    }
+  ],
+  "execution_mode": "isolated",
+  "gas_sponsorship": true,
+  "private_routing": false,
+  "steps": [
+    {
+      "id": "check-heartbeat",
+      "name": "Check Onchain Heartbeat",
+      "type": "contract-read",
+      "contract": {
+        "address": "${LEGACY_KEEPER_ADDRESS}",
+        "abi": [
+          {
+            "name": "getTimeoutStatus",
+            "type": "function",
+            "inputs": [],
+            "outputs": [
+              {"name": "timeoutExceeded", "type": "bool"},
+              {"name": "gracePeriodElapsed", "type": "bool"}
+            ],
+            "stateMutability": "view"
+          }
+        ]
+      },
+      "output_mapping": {
+        "timeout_exceeded": "timeoutExceeded",
+        "grace_elapsed": "gracePeriodElapsed"
+      }
+    },
+    {
+      "id": "evaluate-status",
+      "name": "Evaluate Liveness Status",
+      "type": "condition",
+      "input": "${steps.check-heartbeat.output}",
+      "conditions": [
+        {
+          "description": "Both timeout and grace period elapsed — execute inheritance",
+          "if": "output.timeout_exceeded == true && output.grace_elapsed == true",
+          "then": {
+            "goto_step": "execute-inheritance"
+          }
+        },
+        {
+          "description": "Timeout exceeded but still in grace period — send alert",
+          "if": "output.timeout_exceeded == true && output.grace_elapsed == false",
+          "then": {
+            "goto_step": "start-grace-period"
+          }
+        },
+        {
+          "else": {
+            "action": "log",
+            "level": "info",
+            "message": "Liveness OK — heartbeat within normal range"
+          }
+        }
+      ]
+    },
+    {
+      "id": "start-grace-period",
+      "name": "Start Grace Period",
+      "type": "contract-write",
+      "contract": {
+        "address": "${LEGACY_KEEPER_ADDRESS}",
+        "method": "startGracePeriod",
+        "params": [
+          "${GRACE_PERIOD_DEADLINE}"
+        ]
+      },
+      "on_complete": {
+        "action": "send-alert",
+        "channels": ["telegram", "discord", "email"],
+        "message": "⚠️ ALERT: Grace period started for LegacyKeeper inheritance. Cancel within ${GRACE_PERIOD_DAYS} days to prevent execution."
+      }
+    },
+    {
+      "id": "wait-grace-period",
+      "name": "Wait for Grace Period",
+      "type": "delay",
+      "duration": "${GRACE_PERIOD_SECONDS}",
+      "description": "Wait for grace period to elapse, allowing owner to cancel"
+    },
+    {
+      "id": "check-cancellation",
+      "name": "Check if Inheritance was Cancelled",
+      "type": "contract-read",
+      "contract": {
+        "address": "${LEGACY_KEEPER_ADDRESS}",
+        "method": "getLivenessStatus",
+        "abi": [
+          {
+            "name": "getLivenessStatus",
+            "type": "function",
+            "inputs": [],
+            "outputs": [
+              {"name": "lastHeartbeat", "type": "uint64"},
+              {"name": "timeSinceHeartbeat", "type": "uint64"},
+              {"name": "active", "type": "bool"},
+              {"name": "expired", "type": "bool"}
+            ],
+            "stateMutability": "view"
+          }
+        ]
+      },
+      "output_mapping": {
+        "is_active": "active",
+        "is_expired": "expired"
+      }
+    },
+    {
+      "id": "check-cancellation-status",
+      "name": "Check Cancellation Status",
+      "type": "condition",
+      "input": "${steps.check-cancellation.output}",
+      "conditions": [
+        {
+          "description": "Owner cancelled inheritance — liveness reactivated",
+          "if": "output.is_active == true",
+          "then": {
+            "action": "log",
+            "level": "info",
+            "message": "Inheritance cancelled by owner — resuming normal monitoring"
+          }
+        },
+        {
+          "description": "Liveness still inactive — proceed with inheritance",
+          "else": {
+            "goto_step": "execute-inheritance"
+          }
+        }
+      ]
+    },
+    {
+      "id": "execute-inheritance",
+      "name": "Execute Inheritance Transfer",
+      "type": "contract-write",
+      "contract": {
+        "address": "${LEGACY_KEEPER_ADDRESS}",
+        "method": "executeInheritance",
+        "params": []
+      },
+      "gas_sponsorship": true,
+      "on_complete": {
+        "action": "send-alert",
+        "channels": ["telegram", "discord", "email"],
+        "message": "✅ Inheritance executed — assets distributed to beneficiaries. Tx: ${tx_hash}"
+      }
+    }
+  ],
+  "audit_trail": {
+    "enabled": true,
+    "retention_days": 365,
+    "include_inputs": true,
+    "include_outputs": true
+  }
+}

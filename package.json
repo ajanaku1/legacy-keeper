@@ -1,0 +1,34 @@
+{
+  "name": "legacy-keeper",
+  "version": "0.1.0",
+  "description": "Onchain security & inheritance agent powered by KeeperHub — autonomous emergency evacuation and inheritance execution",
+  "private": true,
+  "scripts": {
+    "test": "hardhat test",
+    "test:agent": "vitest run",
+    "compile": "hardhat compile",
+    "node": "hardhat node",
+    "verify:all": "bash loop/guardrails/verify.sh",
+    "format": "prettier --write '**/*.ts' '**/*.sol'",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "nodemailer": "^6.9.0",
+    "dotenv": "^16.4.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.14.0",
+    "@types/node-telegram-bot-api": "^0.64.0",
+    "@types/nodemailer": "^6.4.0",
+    "hardhat": "^2.22.0",
+    "prettier": "^3.3.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
+  }
+}
