@@ -137,7 +137,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     # cryptographic constants (secp256k1 order / half-order in the EIP-2
     # malleability check are published values, not secrets).
     HIT=$(grep -nE "0x[a-fA-F0-9]{64}" "$f" 2>/dev/null \
-      | grep -vE "0x0{64}|txHash|blockHash|DOMAIN|keccak|_TYPEHASH|constant|malleable|0x7FFFFFFFFFFFFFFF|0xFFFFFFFFFFFFFFFF")
+      | grep -vE "0x0{64}|txHash|blockHash|DOMAIN|keccak|_TYPEHASH|constant|malleable|0x7FFFFFFFFFFFFFFF|0xFFFFFFFFFFFFFFFF|etherscan\.io/tx/|/tx/0x")
     [ -n "$HIT" ] && SECRET_HITS="${SECRET_HITS}${f}: ${HIT}\n"
   done
 fi
