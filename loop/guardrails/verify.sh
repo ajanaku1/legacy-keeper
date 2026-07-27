@@ -144,9 +144,12 @@ fi
 # ── G8 · A module that names an external API must actually call it ─────
 # bot/index.ts documented "POST https://api.telegram.org/..." in a comment and
 # never issued a request. Claiming an integration in prose is not integrating.
+# Only COMMENTED API references count. Naming an endpoint in prose while
+# never calling it is the bot/index.ts failure mode. A URL used as a config
+# default and handed to a client that does the fetching is legitimate.
 API_LIARS=""
 for f in $(find agent bot -name "*.ts" 2>/dev/null); do
-  if grep -qiE "https?://(api|app)\.[a-z0-9.-]+" "$f" 2>/dev/null; then
+  if grep -qiE "^\s*(//|\*).*https?://(api|app)\.[a-z0-9.-]+" "$f" 2>/dev/null; then
     grep -qE "fetch\(|axios|request\(" "$f" 2>/dev/null || API_LIARS="${API_LIARS}${f}
 "
   fi

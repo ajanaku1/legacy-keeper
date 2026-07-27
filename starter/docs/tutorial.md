@@ -1,209 +1,158 @@
-# LegacyKeeper Starter Kit — Tutorial
+# From clone to a KeeperHub-executed transaction
 
-Welcome! This tutorial takes you from zero to a working KeeperHub-executed transaction in under 5 minutes. You will build a two-mode onchain security agent that handles both inheritance (passive liveness monitoring) and emergency evacuation (instant panic trigger).
+Target: **under 5 minutes** of hands-on time, plus waiting on a faucet.
 
-## What you will build
+Everything below was run end to end on a clean machine. Where a step has a
+gotcha that cost us time, it says so — those are the parts the docs don't warn
+you about.
 
-A **LegacyKeeper agent** that runs through KeeperHub:
+---
 
-1. **Inheritance mode** — monitors onchain heartbeats. If you miss too many, it starts a grace period. If you still don't respond, it transfers your assets to your chosen beneficiaries.
+## 0 · What you need
 
-2. **Emergency mode** — instant panic button that evacuates all assets to a safe vault. Protected by a separate recovery key and KeeperHub private routing (MEV protection).
+| | |
+|---|---|
+| Node | **18, 20 or 22**. Hardhat rejects anything newer. `nvm use` reads the repo's `.nvmrc`. |
+| KeeperHub account | [app.keeperhub.com](https://app.keeperhub.com) — free to create |
+| Sepolia ETH | ~0.05, from [sepoliafaucet.com](https://sepoliafaucet.com) or the [Google faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) |
 
-## Prerequisites
+> **Node version is the single most common failure.** On Node 25 Hardhat prints
+> a warning and then behaves unpredictably. On Node 26 it may not run at all.
 
-- Node.js 18+
-- npm or yarn
-- A [KeeperHub](https://keeperhub.com) account (free tier works)
-- An Ethereum wallet with Sepolia testnet ETH (get free from a faucet)
-- A Telegram bot token (optional, for alerts) — talk to [@BotFather](https://t.me/BotFather)
+---
 
-## Step 1: Clone and set up
-
-```bash
-git clone https://github.com/your-org/legacy-keeper
-cd legacy-keeper
-
-# Run the setup wizard
-chmod +x starter/setup.sh
-./starter/setup.sh
-```
-
-The setup script will:
-- Check your Node.js version
-- Install npm dependencies
-- Create your `.env` file from the template
-- Walk you through KeeperHub MCP connection
-- Deploy the LegacyKeeper contract (optional)
-
-## Step 2: Connect to KeeperHub
-
-LegacyKeeper uses KeeperHub's MCP server to execute all onchain actions. Connect your environment:
+## 1 · Install
 
 ```bash
-claude mcp add --transport http keeperhub \
-  https://app.keeperhub.com/mcp \
-  --header "X-Api-Key: $KEEPERHUB_API_KEY"
+git clone <this-repo> && cd legacy-keeper
+nvm use          # or: brew install node@22
+npm install
 ```
 
-Or connect programmatically using the MCP URL and API key from your `.env` file.
-
-The MCP server exposes tools to:
-- Create and manage workflows
-- Trigger scheduled and HTTP-based executions
-- Read contract state
-- View execution logs and audit trails
-
-## Step 3: Deploy the contract
-
-The LegacyKeeper contract stores all onchain configuration:
-- Beneficiary addresses and share percentages
-- Liveness parameters (heartbeat interval, timeout, grace period)
-- Safe vault address
-- Recovery key hash
-- Heartbeat timestamps
-
-Deploy to Sepolia testnet:
+## 2 · Credentials
 
 ```bash
-npm run deploy:contract
+cp .env.example .env
 ```
 
-Or deploy manually using Hardhat:
+**KeeperHub API key** — app.keeperhub.com → **Settings → API Keys →
+Organisation** tab. Keys begin `kh_`.
+
+Or skip the key entirely and authorise in a browser:
+
+```bash
+claude mcp add --transport http keeperhub https://app.keeperhub.com/mcp
+```
+
+**Deployer key** — a burner, never a wallet with real funds:
+
+```bash
+node -e "console.log(require('ethers').Wallet.createRandom().privateKey)"
+```
+
+Run it **twice**. The second key is your *recovery key*, and it must live
+somewhere the first one doesn't — that separation is the entire point of
+emergency evacuation. Only its **address** goes in `.env`.
+
+**Fund two wallets**, not one:
+
+1. your deployer address
+2. the wallet KeeperHub executes with — app.keeperhub.com → Integrations
+
+> Forgetting the second is why a workflow that looks correct does nothing.
+
+## 3 · Deploy
 
 ```bash
 npx hardhat run scripts/deploy.ts --network sepolia
 ```
 
-After deployment, save the contract address to your `.env`:
+Copy the printed address into `LEGACY_KEEPER_ADDRESS` in `.env`.
 
-```
-LEGACY_KEEPER_ADDRESS=0x_your_deployed_address
-```
-
-## Step 4: Register workflows on KeeperHub
-
-Two workflows ship with the starter kit:
-
-### Workflow 1: Liveness Monitor & Inheritance
-
-**File:** `starter/templates/inheritance-workflow.json`
-
-This scheduled workflow runs every 6 hours and:
-1. Reads the contract's `getLivenessStatus()` to check the last heartbeat timestamp
-2. If the timeout has been exceeded, starts the grace period
-3. Sends alerts via Telegram/Discord/Email
-4. After the grace period, executes the inheritance transfer
-5. Records everything in the KeeperHub audit trail
-
-Upload to KeeperHub via the web dashboard or MCP API:
+For a demo you can watch, compress the timers:
 
 ```bash
-curl -X POST https://app.keeperhub.com/api/workflows \
-  -H "X-Api-Key: $KEEPERHUB_API_KEY" \
-  -d @starter/templates/inheritance-workflow.json
+DEMO_TIMEOUT_SECONDS=120 DEMO_GRACE_SECONDS=60 \
+  npx hardhat run scripts/deploy.ts --network sepolia
 ```
 
-### Workflow 2: Emergency Evacuation
-
-**File:** `starter/templates/evacuation-workflow.json`
-
-This HTTP-triggered workflow handles panic events:
-1. Verifies the recovery key signature from request headers
-2. Checks the contract balance
-3. Executes the evacuation via private routing (MEV protected)
-4. Sends alerts on completion or failure
-5. Logs to the audit trail
-
-The webhook URL will be: `https://app.keeperhub.com/panic/{your_wallet_address}`
-
-## Step 5: Configure the agent
-
-Edit your `.env` file with your contract address and preferences:
-
-```env
-# Heartbeat every 24 hours
-HEARTBEAT_INTERVAL_SECONDS=86400
-
-# Inheritance triggers after 30 days without heartbeat
-TIMEOUT_DURATION_SECONDS=2592000
-
-# 7-day grace period to cancel before execution
-GRACE_PERIOD_SECONDS=604800
-```
-
-## Step 6: Start the agent
+## 4 · Configure the estate
 
 ```bash
-npx tsx agent/index.ts
+LK_ADDRESS=0xYourContract npx hardhat run scripts/configure-demo.ts --network sepolia
 ```
 
-The agent will:
-- Start periodic liveness checks
-- Send a confirmation message via Telegram
-- Monitor for heartbeat timeouts
-- Listen for panic triggers
+Adds two beneficiaries (60/40) and funds the contract.
 
-## Step 7: Send your first heartbeat
+> Shares must total **exactly** 10,000 bps. Distribution reverts otherwise, and
+> it reverts at execution time — when nobody is around to fix it.
 
-There are three ways to send a heartbeat:
+## 5 · Create the workflows
 
-### Option A: Dashboard
-Open `dashboard/index.html` in your browser and click "Send Heartbeat."
-
-### Option B: Telegram Bot
-Send `/checkin` to your LegacyKeeper bot.
-
-### Option C: Direct via KeeperHub
 ```bash
-curl -X POST https://app.keeperhub.com/mcp \
-  -H "X-Api-Key: $KEEPERHUB_API_KEY" \
-  -d '{"tool":"contract-write","params":{"address":"$LEGACY_KEEPER_ADDRESS","method":"heartbeat","args":["0x_signature"]}}'
+npm run workflows:deploy
 ```
 
-## Step 8: Test the panic button
+Creates five workflows — Schedule, Webhook ×2, Event and Block triggers — and
+exports what KeeperHub actually stored to `workflows/exported/`. That export is
+a round-trip, not a copy of what was sent, so it proves the definition survived.
 
-### Via Dashboard
-Open the dashboard and click "Activate panic protocol." Confirm in the modal.
+They are created **disabled**; non-manual triggers stay dormant until you
+enable them in the UI.
 
-### Via Telegram
-Send `/panic` to your bot.
+> There is no dry-run. `validate_workflow` needs a `workflowId`, so a workflow
+> must exist before it can be validated. Expect to create, inspect, and delete
+> a few while iterating.
 
-### Via Secret URL (webhook)
-Use the URL shown in your dashboard (keep it secret!).
+## 6 · Execute through KeeperHub
 
-The evacuation workflow will:
-1. Verify your recovery key signature
-2. Check the contract balance
-3. Execute the evacuation through KeeperHub private routing
-4. Send you a confirmation with the transaction hash
-
-## Next steps
-
-- Open the **web dashboard** (`dashboard/index.html`) to configure beneficiaries
-- Set up your **safe vault address** — this is where evacuated assets go
-- Register your **recovery key** — make sure it is different from your wallet key
-- Add **alert channels** — Telegram and Discord are quick to set up
-
-## Architecture overview
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌─────────────────┐
-│  Dashboard  │────▶│  LegacyKeeper    │────▶│  KeeperHub       │
-│  (HTML/JS)  │     │  Agent (TS)      │     │  MCP + Workflows │
-└─────────────┘     └──────────────────┘     └─────────────────┘
-                          │                          │
-                          ▼                          ▼
-                    ┌──────────────┐          ┌──────────────┐
-                    │  Telegram    │          │  EVM Chain   │
-                    │  Bot         │          │  (Sepolia)   │
-                    └──────────────┘          └──────────────┘
+```bash
+npx tsx scripts/workflows/run-heartbeat.ts
 ```
 
-All transaction execution flows through KeeperHub. The agent is stateless — configuration lives on the contract, execution lives in KeeperHub workflows.
+Signs an EIP-712 heartbeat locally, hands it to the KeeperHub workflow, polls
+until settlement, then verifies `lastHeartbeat` advanced **on-chain** rather
+than trusting the reported status.
 
-## Getting help
+You should see a real transaction hash. That is the finish line.
 
-- [KeeperHub Documentation](https://docs.keeperhub.com)
-- [KeeperHub GitHub](https://github.com/KeeperHub/keeperhub)
-- File an issue in the LegacyKeeper repo
+## 7 · Watch it
+
+```bash
+npm run agent                     # monitor
+npm run agent:bot                 # monitor + Telegram
+cd dashboard && npm install && npm run dev
+```
+
+---
+
+## Things that will cost you time
+
+**The MCP handshake order is strict.** `initialize`, then
+`notifications/initialized`, sequentially, before any `tools/call`. The session
+id comes back in the **`Mcp-Session-Id` response header**, not the body. Get it
+wrong and you get `-32003 Session not initialized`.
+
+**Scalars are strings.** `chain_id`, `function_args` and `gas_limit_multiplier`
+on `execute_contract_call` are all string-typed, and `function_args` is a JSON
+array *encoded as a string*:
+
+```jsonc
+{ "chain_id": 11155111,   "function_args": [] }    // rejected
+{ "chain_id": "11155111", "function_args": "[]" }  // accepted
+```
+
+**`status: "completed"` does not mean success.** It means settled. Read
+`result.success` and `result.reverted`. Treating `completed` as success will
+report a reverted transaction as done.
+
+**Never reuse an `idempotency_key` across retries.** KeeperHub caches the
+outcome — including failures — and replays it. Reuse one and your agent
+receives the first failure forever while the chain says it should have
+succeeded. Scope the key per *attempt*.
+
+**The workflow schema is real but undocumented.** `list_action_schemas` returns
+`workflowStructure`, `templateSyntax`, all 6 triggers and 442 actions. Nothing
+on the docs site points to it.
+
+Full write-ups with reproductions: [`reports/friction-log.md`](../../reports/friction-log.md).

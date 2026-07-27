@@ -56,9 +56,9 @@ async function main() {
       return;
     }
 
-    // Deliberately not implemented as an automatic spend. Settlement requires
-    // a funded signer, and the choice to move real money belongs to a human,
-    // not to a script that happens to be running.
+    // Automatic settlement is out of scope by design. Moving real money is a
+    // human decision, not something a script does because it happens to be
+    // running. This path reports how to settle and exits non-zero.
     console.log('\n--pay requested, but no payment signer is configured.');
     console.log('Fund the wallet, then settle with one of:');
     console.log(`  npx -p @keeperhub/wallet keeperhub-wallet add`);
