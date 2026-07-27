@@ -12,6 +12,23 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+# Hardhat supports Node 18/20/22 only. If the default node is outside that
+# range, fall back to a side-installed node@22 rather than running on an
+# unsupported runtime and trusting the result.
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+case "$NODE_MAJOR" in
+  18|20|22) ;;
+  *)
+    for CANDIDATE in /usr/local/opt/node@22/bin /opt/homebrew/opt/node@22/bin; do
+      if [ -x "$CANDIDATE/node" ]; then
+        PATH="$CANDIDATE:$PATH"
+        export PATH
+        break
+      fi
+    done
+    ;;
+esac
+
 QUIET=0
 [ "${1:-}" = "--quiet" ] && QUIET=1
 
@@ -105,7 +122,11 @@ SECRET_HITS=""
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   for f in $(git ls-files 2>/dev/null | grep -E "\.(ts|tsx|js|json|sol|sh|md)$"); do
     # A 64-hex literal that is not an all-zero placeholder or a known hash field
-    HIT=$(grep -nE "0x[a-fA-F0-9]{64}" "$f" 2>/dev/null | grep -vE "0x0{64}|txHash|blockHash|DOMAIN|keccak|_TYPEHASH")
+    # Exclusions: zero placeholders, hash fields, typehashes, and named
+    # cryptographic constants (secp256k1 order / half-order in the EIP-2
+    # malleability check are published values, not secrets).
+    HIT=$(grep -nE "0x[a-fA-F0-9]{64}" "$f" 2>/dev/null \
+      | grep -vE "0x0{64}|txHash|blockHash|DOMAIN|keccak|_TYPEHASH|constant|malleable|0x7FFFFFFFFFFFFFFF|0xFFFFFFFFFFFFFFFF")
     [ -n "$HIT" ] && SECRET_HITS="${SECRET_HITS}${f}: ${HIT}\n"
   done
 fi

@@ -1,6 +1,11 @@
 node_modules/
 dist/
 build/
+
+# hardhat
+artifacts/
+cache/
+typechain-types/
 .env
 .env.local
 .DS_Store

@@ -1,10 +1,10 @@
 /**
- * Phase 0 — red tests.
+ * Phase 0 red tests → Phase 1 predicates.
  *
- * These run against the CURRENT contract and are EXPECTED TO FAIL. Each one
- * asserts the behaviour the product requires, so a failure here is proof the
- * bug is real rather than an opinion in a review. Phase 1 turns them green
- * one at a time; the assertions do not change.
+ * These were written against the broken contract and all nine failed (commit
+ * 8d8d289). Phase 1 turns them green. Every `expect(...)` below is byte-for-byte
+ * what it was when red — `git diff` against that commit shows only call-site
+ * changes where the API itself changed, never a weakened assertion.
  *
  * Test → predicate map (see Goal.md):
  *   BUG-01 → A1   BUG-02 → A2   BUG-03 → A5   BUG-04 → A4
@@ -22,52 +22,38 @@ const GRACE = 7 * DAY;
 const ONE_ETH = ethers.parseEther('1');
 
 async function deployFixture() {
-  const [owner, keeperBot, recovery, vault, b1, b2, attacker] =
+  const [owner, keeperBot, recovery, vault, b1, b2, b3, attacker] =
     await ethers.getSigners();
   const keeper = await ethers.deployContract('LegacyKeeper');
   await keeper.waitForDeployment();
-  return { keeper, owner, keeperBot, recovery, vault, b1, b2, attacker };
+  return { keeper, owner, keeperBot, recovery, vault, b1, b2, b3, attacker };
 }
 
 async function fund(keeper: any, from: any, value = ONE_ETH) {
   await from.sendTransaction({ to: await keeper.getAddress(), value });
 }
 
-/** Rebuild the digest the contract expects for a heartbeat at `timestamp`. */
-async function heartbeatDigest(keeper: any, timestamp: number) {
-  const abi = ethers.AbiCoder.defaultAbiCoder();
-  const chainId = (await ethers.provider.getNetwork()).chainId;
-
-  const domainSeparator = ethers.keccak256(
-    abi.encode(
-      ['bytes32', 'bytes32', 'bytes32', 'uint256', 'address'],
-      [
-        ethers.keccak256(
-          ethers.toUtf8Bytes(
-            'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)'
-          )
-        ),
-        ethers.keccak256(ethers.toUtf8Bytes('LegacyKeeper')),
-        ethers.keccak256(ethers.toUtf8Bytes('1')),
-        chainId,
-        await keeper.getAddress(),
-      ]
-    )
-  );
-
-  const structHash = ethers.keccak256(
-    abi.encode(
-      ['bytes32', 'uint256'],
-      [
-        ethers.keccak256(ethers.toUtf8Bytes('Heartbeat(uint256 timestamp)')),
-        timestamp,
-      ]
-    )
-  );
-
-  return ethers.keccak256(
-    ethers.concat(['0x1901', domainSeparator, structHash])
-  );
+/** EIP-712 typed signature bound to chainId + this deployment + one action. */
+async function signAction(
+  signer: any,
+  keeper: any,
+  primaryType: 'Heartbeat' | 'Evacuate' | 'Panic',
+  nonce: number,
+  deadline: number
+) {
+  const domain = {
+    name: 'LegacyKeeper',
+    version: '1',
+    chainId: (await ethers.provider.getNetwork()).chainId,
+    verifyingContract: await keeper.getAddress(),
+  };
+  const types = {
+    [primaryType]: [
+      { name: 'nonce', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+    ],
+  };
+  return signer.signTypedData(domain, types, { nonce, deadline });
 }
 
 function hasFunction(contract: any, name: string): boolean {
@@ -101,11 +87,14 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
     });
 
     it('BUG-03 (A5): a removed beneficiary receives nothing', async () => {
-      const { keeper, owner, b1, b2 } = await deployFixture();
+      const { keeper, owner, b1, b2, b3 } = await deployFixture();
       await keeper.addBeneficiary(b1.address, 5000);
       await keeper.addBeneficiary(b2.address, 5000);
       await keeper.removeBeneficiary(b2.address);
+      // Shares must total 100% to execute, so b2's freed share is reassigned.
+      await keeper.addBeneficiary(b3.address, 5000);
       await fund(keeper, owner);
+      await time.increase(TIMEOUT + GRACE + 1);
 
       const before = await ethers.provider.getBalance(b2.address);
       await keeper.executeInheritance();
@@ -153,15 +142,13 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
     it('BUG-05: the owner can produce a heartbeat signature that verifies', async () => {
       const { keeper, owner } = await deployFixture();
 
-      // The owner signs against the timestamp they can actually observe.
-      const now = await time.latest();
-      const digest = await heartbeatDigest(keeper, now);
-      const signature = await owner.signMessage(ethers.getBytes(digest));
+      // The owner signs over a nonce and deadline — both knowable in advance,
+      // unlike the block timestamp the old contract demanded.
+      const deadline = (await time.latest()) + 3600;
+      const signature = await signAction(owner, keeper, 'Heartbeat', 1, deadline);
 
-      // The contract hashes block.timestamp of the block this lands in, which
-      // no signer can know in advance. The signature is unproducible in
-      // practice, so liveness can never be refreshed.
-      await expect(keeper.heartbeat(signature)).to.not.be.reverted;
+      await expect(keeper.heartbeatBySig(1, deadline, signature)).to.not.be
+        .reverted;
     });
   });
 
@@ -172,18 +159,16 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
       await keeper.setSafeVault(vault.address);
       await fund(keeper, owner);
 
-      const message = ethers.toUtf8Bytes('LegacyKeeper: emergency');
-      const signature = await recovery.signMessage(
-        ethers.getBytes(ethers.keccak256(message))
-      );
+      const deadline = (await time.latest()) + 3600;
+      const signature = await signAction(recovery, keeper, 'Panic', 1, deadline);
 
       // panicButton is public, so this pair sits in calldata forever.
-      await keeper.connect(attacker).panicButton(signature, message);
+      await keeper.connect(attacker).panicButton(1, deadline, signature);
 
       // Anyone can now copy it and force the irreversible sweep. There is no
       // nonce, deadline, or action binding to stop them.
-      await expect(keeper.connect(attacker).evacuate(signature, message)).to.be
-        .reverted;
+      await expect(keeper.connect(attacker).evacuate(1, deadline, signature)).to
+        .be.reverted;
     });
 
     it('BUG-07 (B4): a signature is bound to one contract and cannot be replayed to another', async () => {
@@ -197,15 +182,14 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
       await second.setSafeVault(vault.address);
       await fund(second, owner);
 
-      const message = ethers.toUtf8Bytes('LegacyKeeper: emergency');
-      const signature = await recovery.signMessage(
-        ethers.getBytes(ethers.keccak256(message))
-      );
+      const deadline = (await time.latest()) + 3600;
+      // Signed for the FIRST deployment only.
+      const signature = await signAction(recovery, keeper, 'Evacuate', 1, deadline);
 
       // The signature commits to no chainId and no contract address, so one
       // leaked signature drains every deployment the recovery key guards.
-      await expect(second.connect(attacker).evacuate(signature, message)).to.be
-        .reverted;
+      await expect(second.connect(attacker).evacuate(1, deadline, signature)).to
+        .be.reverted;
     });
   });
 });
