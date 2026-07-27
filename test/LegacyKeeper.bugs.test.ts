@@ -24,7 +24,7 @@ const ONE_ETH = ethers.parseEther('1');
 async function deployFixture() {
   const [owner, keeperBot, recovery, vault, b1, b2, b3, attacker] =
     await ethers.getSigners();
-  const keeper = await ethers.deployContract('LegacyKeeper');
+  const keeper: any = await ethers.deployContract('LegacyKeeper');
   await keeper.waitForDeployment();
   return { keeper, owner, keeperBot, recovery, vault, b1, b2, b3, attacker };
 }
@@ -176,7 +176,7 @@ describe('LegacyKeeper — Phase 0 red tests', () => {
       await keeper.registerRecoveryKey(recovery.address);
       await keeper.setSafeVault(vault.address);
 
-      const second = await ethers.deployContract('LegacyKeeper');
+      const second: any = await ethers.deployContract('LegacyKeeper');
       await second.waitForDeployment();
       await second.registerRecoveryKey(recovery.address);
       await second.setSafeVault(vault.address);

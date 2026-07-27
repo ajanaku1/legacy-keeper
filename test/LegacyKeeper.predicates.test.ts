@@ -21,10 +21,10 @@ async function setup() {
   const [owner, keeperBot, recovery, vault, b1, b2, attacker] =
     await ethers.getSigners();
 
-  const keeper = await ethers.deployContract('LegacyKeeper');
+  const keeper: any = await ethers.deployContract('LegacyKeeper');
   await keeper.waitForDeployment();
 
-  const token = await ethers.deployContract('MockERC20', [TOKEN_SUPPLY]);
+  const token: any = await ethers.deployContract('MockERC20', [TOKEN_SUPPLY]);
   await token.waitForDeployment();
 
   return { keeper, token, owner, keeperBot, recovery, vault, b1, b2, attacker };
@@ -328,7 +328,7 @@ describe('LegacyKeeper — Goal.md predicates', () => {
     it('distributes a USDT-shaped token that returns no data', async () => {
       const { keeper, owner, keeperBot, b1, b2 } = await setup();
       const supply = ethers.parseUnits('5000', 6);
-      const usdt = await ethers.deployContract('MockUSDT', [supply]);
+      const usdt: any = await ethers.deployContract('MockUSDT', [supply]);
       await usdt.waitForDeployment();
 
       await keeper.addBeneficiary(b1.address, 6000);
@@ -396,7 +396,7 @@ describe('LegacyKeeper — Goal.md predicates', () => {
   describe('One hostile beneficiary cannot brick the estate', () => {
     it('credits a pull balance when a push fails and pays everyone else', async () => {
       const { keeper, owner, keeperBot, b2 } = await setup();
-      const hostile = await ethers.deployContract('RevertingReceiver');
+      const hostile: any = await ethers.deployContract('RevertingReceiver');
       await hostile.waitForDeployment();
       const hostileAddr = await hostile.getAddress();
 

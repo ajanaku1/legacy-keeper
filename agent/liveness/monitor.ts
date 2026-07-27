@@ -1,128 +1,108 @@
 /**
- * Liveness Monitor
+ * Liveness monitor — reads real onchain state.
  *
- * Tracks onchain heartbeats and interfaces with KeeperHub's scheduled workflow
- * to detect missed heartbeats and trigger inheritance execution.
- *
- * The monitor itself is lightweight — it reads onchain state and kicks off
- * KeeperHub workflows. Heavy execution (transfers, alerts) is handled by
- * KeeperHub's managed infrastructure.
+ * Reads go straight to an RPC provider: they are free, fast, and carry no
+ * execution risk. Only transaction *submission* is required to route through
+ * KeeperHub (verify.sh gate G4 enforces that this file never sends one).
  */
 
-export interface HeartbeatRecord {
-  timestamp: number;
-  blockNumber: number;
-  signature: string;
-  valid: boolean;
-}
+import { Contract, JsonRpcProvider } from 'ethers';
+
+const LIVENESS_ABI = [
+  'function getLivenessStatus() view returns (uint64 lastHeartbeat, uint64 timeSinceHeartbeat, bool active, bool expired)',
+  'function getTimeoutStatus() view returns (bool timeoutExceeded, bool graceElapsed)',
+  'function liveness() view returns (uint64 heartbeatInterval, uint64 timeoutDuration, uint64 gracePeriod, uint64 lastHeartbeat, bool livenessActive)',
+  'function inheritanceExecuted() view returns (bool)',
+  'function evacuationExecuted() view returns (bool)',
+  'function beneficiaryCount() view returns (uint256)',
+  'function totalShareBps() view returns (uint16)',
+];
 
 export interface LivenessState {
   lastHeartbeat: number;
   timeSinceHeartbeat: number;
+  timeoutDuration: number;
+  gracePeriod: number;
   active: boolean;
-  expired: boolean;
-  gracePeriodActive: boolean;
-  gracePeriodDeadline: number | null;
-}
-
-export interface LivenessConfig {
-  heartbeatInterval: number;  // seconds
-  timeoutDuration: number;    // seconds
-  gracePeriod: number;        // seconds
+  timeoutExceeded: boolean;
+  graceElapsed: boolean;
+  inheritanceExecuted: boolean;
+  evacuationExecuted: boolean;
+  /** Seconds until distribution becomes callable; 0 once due. */
+  secondsUntilDue: number;
+  /** True while the owner can still cancel by proving liveness. */
+  inGracePeriod: boolean;
+  readyToExecute: boolean;
+  configComplete: boolean;
 }
 
 export class LivenessMonitor {
-  private config: LivenessConfig;
-  private keeperhubApiKey: string;
-  private contractAddress: string;
+  private readonly contract: Contract;
 
-  constructor(
-    config: LivenessConfig,
-    keeperhubApiKey: string,
-    contractAddress: string
-  ) {
-    this.config = config;
-    this.keeperhubApiKey = keeperhubApiKey;
-    this.contractAddress = contractAddress;
+  constructor(rpcUrl: string, contractAddress: string) {
+    if (!rpcUrl) throw new Error('LivenessMonitor: rpcUrl is required');
+    if (!contractAddress) {
+      throw new Error('LivenessMonitor: contractAddress is required');
+    }
+    this.contract = new Contract(
+      contractAddress,
+      LIVENESS_ABI,
+      new JsonRpcProvider(rpcUrl)
+    );
   }
 
-  /**
-   * Evaluate current liveness state by reading onchain data
-   */
   async evaluate(): Promise<LivenessState> {
-    // In production, this reads from the LegacyKeeper contract
-    // through ethers.js or viem. For the hackathon demo, we
-    // simulate the contract state via KeeperHub's MCP tools.
+    const [status, timeout, config, inherited, evacuated, count, shares] =
+      await Promise.all([
+        this.contract.getLivenessStatus(),
+        this.contract.getTimeoutStatus(),
+        this.contract.liveness(),
+        this.contract.inheritanceExecuted(),
+        this.contract.evacuationExecuted(),
+        this.contract.beneficiaryCount(),
+        this.contract.totalShareBps(),
+      ]);
 
-    const state = await this.queryOnchainState();
-    return this.computeState(state);
-  }
+    const timeSince = Number(status[1]);
+    const timeoutDuration = Number(config[1]);
+    const gracePeriod = Number(config[2]);
+    const dueAt = timeoutDuration + gracePeriod;
 
-  /**
-   * Send a heartbeat to the onchain contract
-   */
-  async sendHeartbeat(signerPrivateKey: string): Promise<HeartbeatRecord> {
-    // 1. Create EIP-712 typed signature
-    // 2. Submit via eth_sendTransaction to LegacyKeeper.heartbeat()
-    // 3. Return the record
+    const timeoutExceeded = Boolean(timeout[0]);
+    const graceElapsed = Boolean(timeout[1]);
+    const active = Boolean(status[2]);
 
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signature = `0x${'0'.repeat(130)}`; // placeholder — real sig in production
-
-    const record: HeartbeatRecord = {
-      timestamp,
-      blockNumber: 0,
-      signature,
-      valid: true,
-    };
-
-    console.log(`[LivenessMonitor] Heartbeat sent at ${new Date(timestamp * 1000).toISOString()}`);
-    return record;
-  }
-
-  /**
-   * Cancel a pending inheritance (reset grace period)
-   */
-  async cancelInheritance(): Promise<boolean> {
-    // Triggers LegacyKeeper.cancelInheritance() via KeeperHub
-    console.log('[LivenessMonitor] Inheritance cancelled by owner');
-    return true;
-  }
-
-  private async queryOnchainState(): Promise<{
-    lastHeartbeat: number;
-    active: boolean;
-    expired: boolean;
-  }> {
-    // KeeperHub MCP tool: contract-read on getLivenessStatus()
-    // For now, return simulated data
-    return {
-      lastHeartbeat: Math.floor(Date.now() / 1000) - 3600, // 1 hour ago
-      active: true,
-      expired: false,
-    };
-  }
-
-  private computeState(onchain: {
-    lastHeartbeat: number;
-    active: boolean;
-    expired: boolean;
-  }): LivenessState {
-    const now = Math.floor(Date.now() / 1000);
-    const timeSinceHeartbeat = now - onchain.lastHeartbeat;
-    const timeoutExceeded = timeSinceHeartbeat > this.config.timeoutDuration;
-    const gracePeriodExceeded = timeoutExceeded &&
-      timeSinceHeartbeat > (this.config.timeoutDuration + this.config.gracePeriod);
+    // Shares must total exactly 100% or distribution reverts. Surfacing this
+    // as config state means the dashboard can warn before the deadline
+    // rather than the keeper discovering it at execution time.
+    const configComplete = Number(count) > 0 && Number(shares) === 10000;
 
     return {
-      lastHeartbeat: onchain.lastHeartbeat,
-      timeSinceHeartbeat,
-      active: onchain.active,
-      expired: onchain.expired || gracePeriodExceeded,
-      gracePeriodActive: timeoutExceeded && !gracePeriodExceeded,
-      gracePeriodDeadline: timeoutExceeded
-        ? onchain.lastHeartbeat + this.config.timeoutDuration + this.config.gracePeriod
-        : null,
+      lastHeartbeat: Number(status[0]),
+      timeSinceHeartbeat: timeSince,
+      timeoutDuration,
+      gracePeriod,
+      active,
+      timeoutExceeded,
+      graceElapsed,
+      inheritanceExecuted: Boolean(inherited),
+      evacuationExecuted: Boolean(evacuated),
+      secondsUntilDue: Math.max(0, dueAt - timeSince),
+      inGracePeriod: timeoutExceeded && !graceElapsed,
+      readyToExecute:
+        graceElapsed &&
+        active &&
+        !inherited &&
+        !evacuated &&
+        configComplete,
+      configComplete,
     };
+  }
+
+  /** Fraction of the way to distribution, for progress display. */
+  static progress(state: LivenessState): number {
+    const total = state.timeoutDuration + state.gracePeriod;
+    if (total === 0) return 0;
+    return Math.min(1, state.timeSinceHeartbeat / total);
   }
 }

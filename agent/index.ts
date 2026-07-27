@@ -1,171 +1,174 @@
 /**
- * LegacyKeeper Agent — Main Entry Point
+ * LegacyKeeper agent.
  *
- * Orchestrates the two-mode onchain security & inheritance agent:
+ * Watches onchain liveness and drives both modes through KeeperHub:
+ *   Mode A — heartbeat missed → grace period → distribution to beneficiaries
+ *   Mode B — panic trigger → recovery-key signature → sweep to safe vault
  *
- * Mode A: Inheritance (passive)
- *   - Liveness monitoring via onchain heartbeat signatures
- *   - Configurable timeout + grace period
- *   - Grace-period alerts before execution
- *   - Onchain asset transfer to beneficiaries
- *
- * Mode B: Emergency Evacuation (instant)
- *   - Panic trigger via Telegram, secret URL, or dashboard
- *   - Recovery key auth (not compromised wallet key)
- *   - Instant asset evacuation to safe vault
- *   - KeeperHub private routing for MEV protection
- *
- * All onchain execution goes through KeeperHub — no direct RPC.
+ * The agent decides; KeeperHub executes. Nothing here submits a transaction
+ * directly, and nothing here reports success it did not observe.
  */
 
-import { LivenessMonitor, LivenessConfig } from './liveness/monitor';
-import { KeeperHubExecutor } from './executor/keeperhub';
-import { AlertNotifier, AlertMessage } from './alert/notifier';
+import { McpClient } from './keeperhub/mcp-client';
+import { KeeperHubExecutor, TriggerInfo } from './executor/keeperhub';
+import { LivenessMonitor, LivenessState } from './liveness/monitor';
+import { AlertNotifier } from './alert/notifier';
+import { AuditLedger } from './audit/ledger';
 
 export interface AgentConfig {
-  // KeeperHub
   keeperhubApiKey: string;
   keeperhubMcpUrl: string;
-
-  // Contract
+  rpcUrl: string;
   contractAddress: string;
-  ownerAddress: string;
-
-  // Liveness
-  liveness: LivenessConfig;
-
-  // Notifications
+  chainId: number;
+  checkIntervalMs?: number;
   telegramBotToken?: string;
   telegramChatId?: string;
   discordWebhookUrl?: string;
-  emailConfig?: {
-    host: string;
-    port: number;
-    user: string;
-    pass: string;
-    from: string;
-    to: string;
-  };
-
-  // Recovery
-  recoveryPublicKey?: string;
-  safeVaultAddress?: string;
+  auditLedgerPath?: string;
 }
 
 export class LegacyKeeperAgent {
-  public readonly liveness: LivenessMonitor;
-  public readonly executor: KeeperHubExecutor;
-  public readonly alerts: AlertNotifier;
-  public readonly config: AgentConfig;
+  readonly mcp: McpClient;
+  readonly executor: KeeperHubExecutor;
+  readonly monitor: LivenessMonitor;
+  readonly alerts: AlertNotifier;
+  readonly ledger: AuditLedger;
 
-  private checkInterval: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private graceAlertSent = false;
 
-  constructor(config: AgentConfig) {
-    this.config = config;
+  constructor(private readonly config: AgentConfig) {
+    for (const key of [
+      'keeperhubApiKey',
+      'keeperhubMcpUrl',
+      'rpcUrl',
+      'contractAddress',
+    ] as const) {
+      if (!config[key]) throw new Error(`AgentConfig.${key} is required`);
+    }
 
-    this.liveness = new LivenessMonitor(
-      config.liveness,
-      config.keeperhubApiKey,
+    this.mcp = new McpClient({
+      url: config.keeperhubMcpUrl,
+      apiKey: config.keeperhubApiKey,
+    });
+    this.ledger = new AuditLedger(config.auditLedgerPath);
+    this.executor = new KeeperHubExecutor(
+      this.mcp,
+      this.ledger,
+      config.chainId,
       config.contractAddress
     );
-
-    this.executor = new KeeperHubExecutor(
-      config.keeperhubMcpUrl,
-      config.keeperhubApiKey
-    );
-
+    this.monitor = new LivenessMonitor(config.rpcUrl, config.contractAddress);
     this.alerts = new AlertNotifier({
       telegramBotToken: config.telegramBotToken,
       telegramChatId: config.telegramChatId,
       discordWebhookUrl: config.discordWebhookUrl,
-      emailConfig: config.emailConfig,
     });
   }
 
-  /**
-   * Start the agent — begins liveness monitoring
-   */
   async start(): Promise<void> {
-    console.log('🚀 LegacyKeeper Agent starting...');
-    console.log(`   Contract: ${this.config.contractAddress}`);
-    console.log(`   Owner: ${this.config.ownerAddress}`);
-    console.log(`   KeeperHub: ${this.config.keeperhubMcpUrl}`);
-
-    await this.alerts.sendInfo(
-      'LegacyKeeper Started',
-      `Agent is now active. Contract: ${this.config.contractAddress}`
+    const server = await this.mcp.connect();
+    console.log(
+      `[agent] connected to ${server.name} v${server.version}; watching ${this.config.contractAddress}`
     );
 
-    // Start periodic liveness checks
-    this.checkInterval = setInterval(
-      () => this.runLivenessCheck(),
-      60_000 // every minute for demo; configurable in production
+    await this.tick();
+    this.timer = setInterval(
+      () => void this.tick(),
+      this.config.checkIntervalMs ?? 60_000
     );
   }
 
-  /**
-   * Stop the agent
-   */
-  async stop(): Promise<void> {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
-    }
-    console.log('🛑 LegacyKeeper Agent stopped');
-  }    /**
-   * Run a liveness check cycle
-   */
-  async runLivenessCheck(): Promise<void> {
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+  }
+
+  /** One liveness evaluation. Safe to call repeatedly; does nothing when idle. */
+  async tick(): Promise<LivenessState | null> {
+    let state: LivenessState;
     try {
-      const state = await this.liveness.evaluate();
-
-      if (state.gracePeriodActive) {
-        const deadline = state.gracePeriodDeadline
-          ? new Date(state.gracePeriodDeadline * 1000).toISOString()
-          : 'unknown';
-        await this.alerts.sendGracePeriodAlert(deadline);
-        // Trigger KeeperHub inheritance workflow
-        await this.executor.triggerInheritanceCheck();
-      } else if (state.expired) {
-        // Inheritance executes via KeeperHub workflow — agent just logs
-        console.log('[Agent] Inheritance condition met — KeeperHub workflow should trigger execution');
-      } else {
-        // Status OK — warn if approaching threshold
-        const threshold = this.config.liveness.timeoutDuration * 0.75;
-        if (state.timeSinceHeartbeat > threshold) {
-          await this.alerts.sendHeartbeatReminder(state.timeSinceHeartbeat);
-        }
-      }
+      state = await this.monitor.evaluate();
     } catch (error) {
-      console.error('[Agent] Liveness check failed:', error);
+      console.error('[agent] liveness read failed:', error);
+      return null;
     }
+
+    if (state.inheritanceExecuted || state.evacuationExecuted || !state.active) {
+      return state;
+    }
+
+    if (state.readyToExecute) {
+      await this.runInheritance({
+        type: 'scheduled',
+        source: 'liveness-monitor',
+        detail: `no heartbeat for ${state.timeSinceHeartbeat}s`,
+      });
+      return state;
+    }
+
+    if (state.inGracePeriod && !this.graceAlertSent) {
+      const deadline = new Date(
+        (state.lastHeartbeat + state.timeoutDuration + state.gracePeriod) * 1000
+      ).toISOString();
+      await this.alerts.gracePeriodStarted(
+        deadline,
+        'check in from the dashboard or Telegram to reset the timer.'
+      );
+      this.graceAlertSent = true;
+    }
+
+    // Misconfiguration only surfaces at execution time otherwise, which is
+    // the worst possible moment to discover the shares do not total 100%.
+    if (state.timeoutExceeded && !state.configComplete) {
+      await this.alerts.send({
+        severity: 'critical',
+        title: 'Distribution is due but configuration is incomplete',
+        body: 'Beneficiary shares must total exactly 100%. Execution will revert until fixed.',
+      });
+    }
+
+    return state;
   }
 
-  /**
-   * Handle a panic trigger
-   */
-  async handlePanic(params: {
-    walletAddress: string;
-    recoverySignature: string;
-    signedMessage: string;
-  }): Promise<boolean> {
-    console.log('🚨 Panic triggered!');
-
-    const result = await this.executor.triggerEvacuation(params);
-
-    if (result.success) {
-      await this.alerts.sendEvacuationAlert(
-        result.txHash || '0x...',
-        this.config.safeVaultAddress || 'unknown'
+  async runInheritance(trigger: TriggerInfo) {
+    const result = await this.executor.executeInheritance(trigger);
+    if (result.success && result.txHash) {
+      const state = await this.monitor.evaluate().catch(() => null);
+      await this.alerts.inheritanceExecuted(result.txHash, state ? 1 : 0);
+    } else {
+      await this.alerts.executionFailed(
+        'executeInheritance',
+        result.error ?? 'unknown',
+        result.attempts
       );
     }
+    return result;
+  }
 
-    return result.success;
+  async runEvacuation(
+    params: { nonce: number; deadline: number; signature: string },
+    trigger: TriggerInfo,
+    safeVault: string
+  ) {
+    const result = await this.executor.executeEvacuation(params, trigger);
+    if (result.success && result.txHash) {
+      await this.alerts.evacuationExecuted(result.txHash, safeVault);
+    } else {
+      await this.alerts.executionFailed(
+        'evacuate',
+        result.error ?? 'unknown',
+        result.attempts
+      );
+    }
+    return result;
   }
 }
 
-// Export components for external use
-export { LivenessMonitor } from './liveness/monitor';
+export { McpClient } from './keeperhub/mcp-client';
 export { KeeperHubExecutor } from './executor/keeperhub';
+export { LivenessMonitor } from './liveness/monitor';
 export { AlertNotifier } from './alert/notifier';
-export type { LivenessConfig } from './liveness/monitor';
+export { AuditLedger } from './audit/ledger';
+export type { LivenessState } from './liveness/monitor';

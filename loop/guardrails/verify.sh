@@ -73,6 +73,17 @@ else
   fail "G2 contract tests" "${SUMMARY:-see /tmp/lk-test.log}"
 fi
 
+# ── G6 · Agent typechecks ─────────────────────────────────────────────
+# Added after tsc caught three real defects the other gates passed over,
+# including a deploy script that would ReferenceError on every verify.
+if [ ! -d node_modules ]; then
+  fail "G6 typecheck" "node_modules missing"
+elif npx tsc --noEmit >/tmp/lk-tsc.log 2>&1; then
+  pass "G6 typecheck"
+else
+  fail "G6 typecheck" "$(head -3 /tmp/lk-tsc.log | sed 's/^/          /')"
+fi
+
 # ── G3 · No stub may return a success value ───────────────────────────
 # The previous build returned a hardcoded 0x + 'a'.repeat(64) as a tx hash.
 # Anything that fabricates success is a build failure, not scaffolding.
