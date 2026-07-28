@@ -62,12 +62,14 @@ Status is evidence-based. "Live" means a transaction or artifact exists.
 | ERC-20 inheritance and evacuation | Live | 36 contract tests |
 | Telegram bot | Live | real Bot API long-polling |
 | Dashboard | Live | reads chain state, writes heartbeat |
-| x402 paid workflow | Wired, unfunded | real 402 challenge captured, no spend |
+| x402 paid workflow | Live | [Base tx `0xc91e3026`](https://basescan.org/tx/0xc91e3026f9695639fb2e262677b4e77a752efae89a7c32312f0319bc11074728), $0.01 USDC settled |
 | MPP over Tempo | Available, untested | wallet exists, no funds |
 | Private routing | Requested, unconfirmed | flag set onchain, path not verified |
 | Mainnet | Out of scope | Sepolia only |
 
 Private routing is the one thing we set but cannot prove. The UI says "requested", not "used", because KeeperHub has not confirmed the submission path.
+
+The x402 payment is real and settled, but it proves less than we wanted. The listing we paid takes no arguments and reads a fixed demo approval, so it validates the payment rail rather than checking this project's own allowance. Pointing a paid check at our contract needs a listing that accepts inputs, which none of the published ones currently do.
 
 ---
 
