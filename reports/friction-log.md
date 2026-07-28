@@ -68,6 +68,8 @@ exercise our retry path.
 
 **Status:** confirmed on a live Sepolia contract. Highest-severity finding.
 
+**Filed upstream:** [KeeperHub/keeperhub#1840](https://github.com/KeeperHub/keeperhub/issues/1840)
+
 `execute_contract_call` accepts an `idempotency_key`. The obvious reading —
 "one key per logical action, so retries cannot double-submit" — produces an
 agent that **can never recover from a failure**.
@@ -123,12 +125,16 @@ already happened.
 **Suggested fix:** document the status vocabulary and the
 `status` vs `result.success` split on the MCP page.
 
+Adjacent to upstream [#1784](https://github.com/KeeperHub/keeperhub/issues/1784), which covers the missing txHash on the execute response and sponsored executions being invisible to EOA-level checks. Not filed separately to avoid duplicating it.
+
 ---
 
 <a id="03"></a>
 ## 03 · `execute_contract_call` types disagree with the schema it advertises
 
-**Status:** confirmed, reproducible. Strongest bounty candidate so far.
+**Status:** confirmed, reproducible.
+
+**Filed upstream:** [KeeperHub/keeperhub#1841](https://github.com/KeeperHub/keeperhub/issues/1841)
 
 `tools/list` advertises `execute_contract_call` with properties
 `chain_id` and `function_args`. The natural encoding — a numeric chain id and
