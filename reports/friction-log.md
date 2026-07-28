@@ -22,6 +22,7 @@ Entries below are in the order they were discovered, not ranked order.
 
 ---
 
+<a id="01"></a>
 ## 01 · Where gas sponsorship applies is ambiguous
 
 **Status:** RESOLVED empirically — sponsorship works on Sepolia.
@@ -43,6 +44,7 @@ networks including Sepolia.
 
 ---
 
+<a id="05"></a>
 ## 05 · `gas_limit_multiplier` is clamped — you cannot underprice into a stuck tx
 
 **Status:** confirmed. Positive finding, worth documenting as a feature.
@@ -61,6 +63,7 @@ exercise our retry path.
 
 ---
 
+<a id="07"></a>
 ## 07 · A reused `idempotency_key` silently replays a cached failure
 
 **Status:** confirmed on a live Sepolia contract. Highest-severity finding.
@@ -101,6 +104,7 @@ suggests safety while the behaviour introduces a liveness bug.
 
 ---
 
+<a id="06"></a>
 ## 06 · `status: "completed"` does not mean the call succeeded
 
 **Status:** confirmed. Cost us a real bug.
@@ -121,6 +125,7 @@ already happened.
 
 ---
 
+<a id="03"></a>
 ## 03 · `execute_contract_call` types disagree with the schema it advertises
 
 **Status:** confirmed, reproducible. Strongest bounty candidate so far.
@@ -158,6 +163,7 @@ example in the tool description would remove the guesswork entirely.
 
 ---
 
+<a id="04"></a>
 ## 04 · The MCP handshake order is strict and easy to get wrong
 
 **Status:** confirmed.
@@ -181,6 +187,7 @@ that responses can be SSE-framed.
 
 ---
 
+<a id="02"></a>
 ## 02 · The workflow schema exists but is undiscoverable from the docs
 
 **Status:** CORRECTED. My earlier claim — that no schema existed — was wrong.
@@ -207,6 +214,7 @@ difference between "workflows are a UI feature" and "workflows are code".
 
 ---
 
+<a id="08"></a>
 ## 08 · `validate_workflow` cannot validate a workflow that does not exist yet
 
 **Status:** confirmed.
