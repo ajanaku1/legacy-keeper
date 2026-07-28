@@ -1,0 +1,40 @@
+# Goal.md predicate -> how it is proven.
+#
+# kind:
+#   gate     an automated check in verify.sh
+#   file     a named artifact that must exist and be non-empty
+#   tx       a Sepolia transaction hash a third party can load
+#   exec     a KeeperHub execution id
+#   open     acknowledged as NOT met, with a reason. Counted and reported.
+#
+# predicate	kind	reference	note
+A1-A6_B1-B5_contract	gate	G2	36 hardhat tests
+security_findings	file	reports/threat-model.md	6 findings, each with a regression test
+no_direct_rpc_writes	gate	G4	agent and bot scanned
+coverage_matrix	file	reports/keeperhub-coverage.md	surface-by-surface with N/A rationale
+workflows_exist	file	workflows/manifest.json	5 workflows, ids recorded
+workflows_exported	file	workflows/exported/liveness-monitor.json	round-trip from get_workflow
+trigger_schedule	file	workflows/exported/liveness-monitor.json	Schedule cron
+trigger_webhook	file	workflows/exported/panic-evacuation.json	Webhook
+trigger_event	file	workflows/exported/grace-watch.json	Event on GracePeriodEntered
+trigger_block	file	workflows/exported/block-health.json	Block interval
+workflow_drove_contract	tx	0x0993b36145510f58c4e2cff66a91f6cd94b283835749a9066c356e9974a10c02	heartbeat via workflow, exec i14i9t2o1vu2wob2nunh4
+inheritance_executed	tx	0x6efe67a56e725408785e048eb3a7f1a2598ac70e4cdbbdbdc9cd554cd7d12308	exact 60/40 split
+evacuation_executed	tx	0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f257bba6ffd	recovery key only
+sponsorship_demonstrated	tx	0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598	sponsored true
+failure_then_recovery	tx	0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc	3 reverts then settled
+audit_ledger_fields	file	loop/memory/audit.jsonl	trigger, simulation, tx, gas, outcome, retries, timestamp
+agent_reliability_suite	gate	G9	18 vitest cases against a local fake server
+route_policy_exclusive	gate	G9	assertRoutesExclusive covered by test
+no_fabricated_success	gate	G3	fabricated values and stub language
+api_claims_are_real	gate	G8	naming an API requires calling it
+starter_tutorial	file	starter/docs/tutorial.md	clean-machine path
+readme_truthful	file	README.md	capability matrix is evidence-based
+upstream_reports	file	reports/friction-log.md	9 findings with reproductions
+# ---- deliberately not met ----
+x402_payment_proof	open	agentcash wallet unfunded	402 challenge captured; no spend authorised
+mpp_demonstrated	open	no Tempo USDC.e	same wallet, same blocker
+private_route_confirmed	open	no API surface	see friction-log #09
+mainnet_execution	open	excluded from scope	user decision
+demo_video	open	excluded from scope	user decision
+repo_published	open	awaiting push approval	18 commits local only

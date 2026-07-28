@@ -204,6 +204,43 @@ else
   fail "G5 no secret material in tracked files" "$(printf "%b" "$SECRET_HITS" | head -5 | sed 's/^/          /')"
 fi
 
+# ── G10 · Every Goal.md predicate maps to a gate or a named artifact ──
+# prompt.md's definition of done requires this mapping to exist and hold.
+# Open items are counted and printed rather than hidden: a predicate we have
+# not met is information, not something to bury.
+EV=loop/guardrails/evidence.tsv
+if [ ! -f "$EV" ]; then
+  fail "G10 evidence map" "$EV missing"
+else
+  MISSING=""
+  OPEN_COUNT=0
+  while IFS=$'\t' read -r predicate kind ref note; do
+    case "$predicate" in ''|\#*) continue;; esac
+    case "$kind" in
+      file)
+        [ -s "$ref" ] || MISSING="${MISSING}  ${predicate}: missing or empty $ref
+"
+        ;;
+      tx)
+        # 32-byte hash, so a placeholder cannot pass for evidence.
+        echo "$ref" | grep -qE '^0x[a-fA-F0-9]{64}$' \
+          || MISSING="${MISSING}  ${predicate}: not a valid tx hash
+"
+        ;;
+      open)
+        OPEN_COUNT=$((OPEN_COUNT+1))
+        ;;
+    esac
+  done < "$EV"
+
+  TOTAL=$(grep -vcE '^\s*#|^\s*$' "$EV")
+  if [ -z "$MISSING" ]; then
+    pass "G10 evidence map ($((TOTAL-OPEN_COUNT))/$TOTAL proven, $OPEN_COUNT open)"
+  else
+    fail "G10 evidence map" "$(printf '%s' "$MISSING" | head -5)"
+  fi
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────
 echo "──────────────────────────────────────────────────"
 if [ "$FAIL_COUNT" -eq 0 ]; then
