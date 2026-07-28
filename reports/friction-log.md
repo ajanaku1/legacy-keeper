@@ -4,6 +4,22 @@ Running notes from building LegacyKeeper, captured as they happen. Entries that
 firm up into reproducible issues get filed upstream (see `plan.md` for the
 posting checkpoint). Raw notes here are cheap; reconstructing them later is not.
 
+## Index, ranked by what it costs a new builder
+
+| # | Finding | Severity | Status |
+|---|---------|----------|--------|
+| [07](#07) | A reused `idempotency_key` silently replays a cached failure, making agent recovery impossible | **Critical** | Confirmed live |
+| [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises | **High** | Confirmed |
+| [06](#06) | `status: "completed"` means settled, not successful | **High** | Confirmed, cost us a real bug |
+| [09](#09) | Private routing is advertised but has no API surface and no observability | **High** | Confirmed |
+| [02](#02) | The workflow schema exists but is undiscoverable from the docs | Medium | Corrected |
+| [08](#08) | `validate_workflow` cannot validate a definition before it exists | Medium | Confirmed |
+| [04](#04) | Handshake ordering, header-borne session id, SSE framing | Medium | Confirmed |
+| [01](#01) | Gas sponsorship scope reads as Base/Tempo-only but works on Sepolia | Low | Resolved |
+| [05](#05) | `gas_limit_multiplier` is clamped, so you cannot test your own failure handling | Low | Positive finding |
+
+Entries below are in the order they were discovered, not ranked order.
+
 ---
 
 ## 01 · Where gas sponsorship applies is ambiguous
@@ -207,3 +223,66 @@ creating and deleting real objects.
 `workflowId`, so a definition can be checked before it is persisted. This
 matters most for exactly the audience the onboarding bounty targets — someone
 authoring their first workflow in code, who will get it wrong several times.
+
+---
+
+<a id="09"></a>
+## 09 · Private routing is advertised but has no API surface and no observability
+
+**Status:** confirmed by exhaustive schema search.
+
+The product pages promise MEV protection: KeeperHub "does not publish
+intent-revealing transactions to public mempools when private routes are
+available", with "private routing on supported chains". The hackathon brief
+lists *Private routing. MEV protection via non-public submission paths* as a
+headline capability.
+
+There is no way to request it, and no way to tell whether it happened.
+
+**Reproduction.** Search every live schema for
+`private|mev|flashbot|protect|bundle|relay|mempool`:
+
+- all 35 MCP tool input schemas → **0 matches**
+- all 442 action schemas from `list_action_schemas` → **0 matches**
+
+`execute_contract_call` exposes `gas_limit_multiplier`, `priority_fee_gwei`,
+`value` and `idempotency_key`. Nothing route-related.
+
+**The asymmetry is the sharpest part.** `get_direct_execution_status` reports
+sponsorship but not routing:
+
+```jsonc
+{
+  "sponsored": true,        // observable — we can prove this
+  "retryCount": 0,          // observable
+  // no route / private / mempool field anywhere
+}
+```
+
+So a builder can demonstrate gas sponsorship with evidence, and cannot
+demonstrate private routing at all.
+
+**Why it matters here.** LegacyKeeper's emergency evacuation is precisely the
+transaction that must not be visible before inclusion: it announces "these
+funds are moving, race me". Private routing is the difference between an
+evacuation and a front-run evacuation. We built an explicit route policy that
+requests it for evacuation and sponsorship for liveness, and we cannot verify
+the request was honoured. Our UI therefore says "private routing requested",
+never "used" — the only honest wording available.
+
+Sepolia may simply have no private route, since private relays are mainnet
+infrastructure. That would be a reasonable answer, but nothing in the API or
+docs says so, and "when private routes are available" leaves a builder unable
+to determine availability for their chain.
+
+**Suggested fix, in order of usefulness:**
+
+1. Return the submission path on the execution record, e.g.
+   `"route": "private" | "public"`, alongside `sponsored`. This alone makes the
+   feature demonstrable.
+2. Document which chains have private routes available.
+3. Allow the route to be requested explicitly, and report when a request could
+   not be honoured, rather than silently falling back to the public mempool.
+
+**Open question for the team:** is private routing applied automatically on
+eligible chains, is it an organisation-level setting, and is Sepolia eligible?
