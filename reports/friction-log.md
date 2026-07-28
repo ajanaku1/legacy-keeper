@@ -17,6 +17,7 @@ posting checkpoint). Raw notes here are cheap; reconstructing them later is not.
 | [04](#04) | Handshake ordering, header-borne session id, SSE framing | Medium | Confirmed |
 | [01](#01) | Gas sponsorship scope reads as Base/Tempo-only but works on Sepolia | Low | Resolved |
 | [05](#05) | `gas_limit_multiplier` is clamped, so you cannot test your own failure handling | Low | Positive finding |
+| [10](#10) | Marketplace listings take no inputs, so a paid check cannot target your own contract | Medium | Confirmed by paying |
 
 Entries below are in the order they were discovered, not ranked order.
 
@@ -300,3 +301,37 @@ to determine availability for their chain.
 
 **Open question for the team:** is private routing applied automatically on
 eligible chains, is it an organisation-level setting, and is Sepolia eligible?
+
+---
+
+<a id="10"></a>
+## 10 · Marketplace listings take no inputs, so a paid check cannot be pointed at your own contract
+
+**Status:** confirmed by paying for one.
+
+We paid $0.01 for `approval-risk-rescan` to get an independent read of an ERC-20
+allowance. The payment worked end to end
+([Base tx](https://basescan.org/tx/0xc91e3026f9695639fb2e262677b4e77a752efae89a7c32312f0319bc11074728),
+execution `9kctohfxdeqgrl2pv5kym`). The result did not answer our question.
+
+The listing's `inputSchema` is `{"type": "object"}` with no properties, and
+`call_workflow` requires an `inputs` record that the workflow then ignores. It
+reads a hardcoded demo LINK approval on Sepolia and returned `MAX_UINT256` for
+an address we have never interacted with.
+
+So the rail works and the listing runs, but a buyer cannot ask it about their
+own contract. As a marketplace primitive that is a significant limit: the
+listings we browsed are demonstrations of a workflow rather than services you
+can point at your own state. `search_workflows` does return an `inputSchema`
+per listing, so the mechanism for parameterised listings appears to exist and
+simply is not used by the listings currently published.
+
+**What we did instead:** kept the payment as proof the x402 path works, and
+stopped claiming it verifies our allowance, because it does not. The honest
+version of this product role needs a listing that accepts a contract address
+and token, which means publishing one ourselves.
+
+**Suggested fix:** encourage or require a meaningful `inputSchema` on paid
+listings, and surface it in `search_workflows` output so a buyer can tell
+before paying whether a listing can answer their question. Right now the only
+way to find out is to pay.

@@ -31,10 +31,10 @@ api_claims_are_real	gate	G8	naming an API requires calling it
 starter_tutorial	file	starter/docs/tutorial.md	clean-machine path
 readme_truthful	file	README.md	capability matrix is evidence-based
 upstream_reports	file	reports/friction-log.md	9 findings with reproductions
+repo_published	file	README.md	https://github.com/ajanaku1/legacy-keeper
+x402_payment_proof	tx	0xc91e3026f9695639fb2e262677b4e77a752efae89a7c32312f0319bc11074728	Base mainnet, $0.01 USDC, exec 9kctohfxdeqgrl2pv5kym
 # ---- deliberately not met ----
-x402_payment_proof	open	agentcash wallet unfunded	402 challenge captured; no spend authorised
 mpp_demonstrated	open	no Tempo USDC.e	same wallet, same blocker
 private_route_confirmed	open	no API surface	see friction-log #09
 mainnet_execution	open	excluded from scope	user decision
 demo_video	open	excluded from scope	user decision
-repo_published	open	awaiting push approval	18 commits local only
