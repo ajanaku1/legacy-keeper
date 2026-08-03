@@ -38,7 +38,7 @@ async function main() {
   const timeout = process.env.DEMO_TIMEOUT_SECONDS;
   const grace = process.env.DEMO_GRACE_SECONDS;
   if (timeout && grace) {
-    const tx = await (keeper as any).setLivenessConfig(
+    const tx = await keeper.getFunction('setLivenessConfig')(
       60,
       Number(timeout),
       Number(grace)

@@ -52,19 +52,40 @@
       }
     },
     {
-      "id": "is-due",
+      "id": "read-inheritance",
       "data": {
         "type": "action",
-        "label": "Grace Elapsed?",
+        "label": "Read Inheritance State",
         "config": {
-          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true",
-          "actionType": "Condition"
+          "abi": "[{\"name\":\"inheritanceExecuted\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/read-contract",
+          "abiFunction": "inheritanceExecuted",
+          "functionArgs": "[]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
         },
         "status": "idle"
       },
       "type": "action",
       "position": {
         "x": 504,
+        "y": 0
+      }
+    },
+    {
+      "id": "is-due",
+      "data": {
+        "type": "action",
+        "label": "Grace Elapsed?",
+        "config": {
+          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true && {{@read-inheritance:Read Inheritance State.result}} == false",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
         "y": 0
       }
     },
@@ -85,7 +106,7 @@
       },
       "type": "action",
       "position": {
-        "x": 756,
+        "x": 1008,
         "y": 0
       }
     },
@@ -95,15 +116,16 @@
         "type": "action",
         "label": "Notify Beneficiaries",
         "config": {
-          "chatId": "000000000",
+          "chatId": "835617357",
           "message": "LegacyKeeper: estate distributed. tx {{@distribute:Execute Inheritance.transactionHash}}",
-          "actionType": "telegram/send-message"
+          "actionType": "telegram/send-message",
+          "integrationId": "zjnwqnhvy2gyp7irddiuv"
         },
         "status": "idle"
       },
       "type": "action",
       "position": {
-        "x": 1008,
+        "x": 1260,
         "y": 0
       }
     }
@@ -115,8 +137,13 @@
       "target": "read-status"
     },
     {
-      "id": "read-status->is-due",
+      "id": "read-status->read-inheritance",
       "source": "read-status",
+      "target": "read-inheritance"
+    },
+    {
+      "id": "read-inheritance->is-due",
+      "source": "read-inheritance",
       "target": "is-due"
     },
     {
@@ -132,10 +159,10 @@
     }
   ],
   "visibility": "private",
-  "enabled": false,
+  "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:08.358Z",
-  "updatedAt": "2026-07-27T23:12:08.358Z",
+  "updatedAt": "2026-08-02T00:24:00.246Z",
   "seededAt": null,
   "isListed": false,
   "listedSlug": null,
@@ -143,7 +170,7 @@
   "inputSchema": null,
   "outputMapping": null,
   "priceUsdcPerCall": null,
-  "workflowType": "read",
+  "workflowType": "write",
   "category": null,
   "chain": null,
   "listingVersion": 1,

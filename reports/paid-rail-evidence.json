@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-08-02T01:28:05.000Z",
+  "provider": {
+    "name": "OneSource",
+    "origin": "https://api.onesource.io",
+    "endpoint": "/api/chain/allowance",
+    "discoveredPriceUsd": 0.003,
+    "supportedProtocols": [
+      "x402",
+      "mpp"
+    ]
+  },
+  "product": {
+    "query": {
+      "network": "sepolia",
+      "token": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+      "tokenSource": "https://developers.circle.com/stablecoins/usdc-contract-addresses",
+      "owner": "0x34b0Ba20669f3ec4F1056853780c381e5e35F724",
+      "spender": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+    },
+    "decision": {
+      "allowanceAtomic": "0",
+      "status": "at-risk",
+      "tracked": false,
+      "reason": "USDC is not tracked and its allowance to LegacyKeeper is zero"
+    }
+  },
+  "x402": {
+    "challenge": true,
+    "challengeTerms": {
+      "version": 2,
+      "scheme": "exact",
+      "paymentNetwork": "eip155:8453",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "amountAtomic": "3000",
+      "costUsd": 0.003
+    },
+    "policyApproved": true,
+    "policy": {
+      "allowedOrigin": "https://api.onesource.io",
+      "allowedPath": "/api/chain/allowance",
+      "queryNetwork": "sepolia",
+      "allowedSpender": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA",
+      "maxUsd": 0.005
+    },
+    "paymentTx": "0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5",
+    "paymentExplorer": "https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5",
+    "paymentReceipt": {
+      "confirmed": true,
+      "status": "0x1",
+      "blockNumber": "0x2f22022"
+    },
+    "retried": true,
+    "httpFlow": {
+      "initialStatus": 402,
+      "finalStatus": 200
+    },
+    "requestId": "2d90a224ae07b72e",
+    "resultConsumed": true
+  },
+  "mpp": {
+    "demonstrated": false,
+    "blocker": "OneSource advertised MPP, but the AgentCash Tempo account balance was $0.00; funding it would require a separate user-authorized credential/fund move."
+  }
+}

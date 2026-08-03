@@ -27,16 +27,19 @@ async function main() {
   if (!address) throw new Error('LK_ADDRESS is required');
 
   const [owner] = await ethers.getSigners();
-  const keeper: any = await ethers.getContractAt('LegacyKeeper', address);
+  const keeper = await ethers.getContractAt('LegacyKeeper', address);
 
   console.log(`network:  ${network.name}`);
   console.log(`contract: ${address}`);
   console.log(`owner:    ${owner.address}\n`);
 
-  const existing = Number(await keeper.totalShareBps());
+  const existing = Number(await keeper.getFunction('totalShareBps')());
   if (existing === 0) {
     for (const b of BENEFICIARIES) {
-      const tx = await keeper.addBeneficiary(b.address, b.shareBps);
+      const tx = await keeper.getFunction('addBeneficiary')(
+        b.address,
+        b.shareBps
+      );
       await tx.wait();
       console.log(`beneficiary ${b.address} @ ${b.shareBps / 100}%  (${tx.hash})`);
     }
@@ -53,12 +56,18 @@ async function main() {
     console.log(`already funded: ${ethers.formatEther(balance)} ETH`);
   }
 
-  const [timeoutExceeded, graceElapsed] = await keeper.getTimeoutStatus();
-  const cfg = await keeper.liveness();
+  const [timeoutExceeded, graceElapsed] = await keeper.getFunction(
+    'getTimeoutStatus'
+  )();
+  const cfg = await keeper.getFunction('liveness')();
   const dueIn =
-    Number(cfg[1]) + Number(cfg[2]) - Number((await keeper.getLivenessStatus())[1]);
+    Number(cfg[1]) +
+    Number(cfg[2]) -
+    Number((await keeper.getFunction('getLivenessStatus')())[1]);
 
-  console.log(`\nshares total:     ${Number(await keeper.totalShareBps())} bps`);
+  console.log(
+    `\nshares total:     ${Number(await keeper.getFunction('totalShareBps')())} bps`
+  );
   console.log(`timeout exceeded: ${timeoutExceeded}`);
   console.log(`grace elapsed:    ${graceElapsed}`);
   console.log(`executable in:    ${Math.max(0, dueIn)}s`);

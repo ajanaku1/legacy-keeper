@@ -35,9 +35,12 @@ const ACTION_ROUTES: Record<string, Route> = {
   heartbeatBySig: 'sponsored',
   executeInheritance: 'sponsored',
   executeInheritanceERC20: 'sponsored',
-  evacuate: 'private',
-  evacuateToken: 'private',
-  panicButton: 'private',
+  // KeeperHub currently exposes no private-route request field or route
+  // evidence. Emergency actions stay on the default route until it does;
+  // intent is not recorded as a request that was never transmitted.
+  evacuate: 'default',
+  evacuateToken: 'default',
+  panicButton: 'default',
 };
 
 export function chooseRoute(action: string): RouteDecision {

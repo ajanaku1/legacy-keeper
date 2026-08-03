@@ -1,11 +1,10 @@
 'use client';
 
-import { WagmiProvider, createConfig, http } from 'wagmi';
-import { sepolia } from 'wagmi/chains';
-import { injected } from 'wagmi/connectors';
+import { WagmiProvider, createConfig, http, injected } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { SEPOLIA_RPC_URL } from '@/lib/contract';
+import { sepolia } from '@/lib/sepolia';
 
 const config = createConfig({
   chains: [sepolia],

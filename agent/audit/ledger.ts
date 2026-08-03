@@ -40,6 +40,12 @@ export interface AuditEntry {
   txHash?: string;
   gasUsed?: string;
   blockNumber?: number;
+  verification?: {
+    receipt: boolean;
+    event?: string;
+    resultingState?: string;
+    error?: string;
+  };
 
   /**
    * Which submission path was asked for, and whether KeeperHub confirmed it.

@@ -6,122 +6,320 @@
  * to know the definition survived intact, and it is what the starter kit
  * reproduces.
  *
- * Workflows are created DISABLED. Non-manual triggers stay dormant until
- * explicitly enabled, so creating the set fires nothing.
+ * Workflows remain disabled unless --enable is explicit. Enabling starts
+ * schedule, event, block, and webhook trigger processing immediately.
  *
- *   npx tsx scripts/workflows/deploy.ts [--validate-only]
+ *   npx tsx scripts/workflows/deploy.ts [--validate-only] [--enable]
  */
 
-import 'dotenv/config';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { McpClient } from '../../agent/keeperhub/mcp-client';
-import { buildWorkflows } from '../../workflows/definitions';
+import "dotenv/config";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { McpClient } from "../../agent/keeperhub/mcp-client";
+import { buildWorkflows, WorkflowDef } from "../../workflows/definitions";
 
-const OUT_DIR = 'workflows/exported';
+const OUT_DIR = "workflows/exported";
+type JsonObject = Record<string, unknown>;
+
+interface StoredManifest {
+  contract?: string;
+  workflows?: Array<{ key: string; workflowId: string }>;
+}
+
+interface ExistingWorkflow {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
+
+interface DeployedWorkflow {
+  definition: WorkflowDef;
+  id: string;
+  wasEnabled: boolean;
+}
 
 async function main() {
-  const validateOnly = process.argv.includes('--validate-only');
-  const contract = req('LEGACY_KEEPER_ADDRESS');
-  const chatId = process.env.TELEGRAM_CHAT_ID || '000000000';
+  const validateOnly = process.argv.includes("--validate-only");
+  const enable = process.argv.includes("--enable");
+  const storedManifest = readStoredManifest();
+  const contract = process.env.LEGACY_KEEPER_ADDRESS || storedManifest.contract;
+  if (!contract) throw new Error("LEGACY_KEEPER_ADDRESS is required");
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (enable && !chatId) {
+    throw new Error(
+      "TELEGRAM_CHAT_ID is required before enabling notifications",
+    );
+  }
 
   const mcp = new McpClient({
-    url: process.env.KEEPERHUB_MCP_URL ?? 'https://app.keeperhub.com/mcp',
-    apiKey: req('KEEPERHUB_API_KEY'),
+    url: process.env.KEEPERHUB_MCP_URL ?? "https://app.keeperhub.com/mcp",
+    apiKey: req("KEEPERHUB_API_KEY"),
   });
   const server = await mcp.connect();
   console.log(`connected: ${server.name} v${server.version}`);
   console.log(`contract:  ${contract}\n`);
 
-  const defs = buildWorkflows(contract, chatId);
+  const telegramIntegrationId = await resolveTelegramIntegration(mcp);
+  if (enable && !telegramIntegrationId) {
+    throw new Error(
+      "A KeeperHub Telegram integration is required before enabling",
+    );
+  }
+  const defs = buildWorkflows(
+    contract,
+    chatId || "000000000",
+    telegramIntegrationId,
+  );
   const existing = await listExisting(mcp);
-  const manifest: Record<string, unknown>[] = [];
-
-  mkdirSync(OUT_DIR, { recursive: true });
-
-  for (const def of defs) {
-    process.stdout.write(`${def.name}\n`);
-
-    // validate_workflow takes a workflowId, so there is no dry-run for a
-    // candidate definition — validation only happens after the workflow
-    // exists. See reports/friction-log.md #08.
-    if (validateOnly) {
-      console.log('  (no pre-create validation available; skipping)');
-      continue;
-    }
-
-    const prior = existing.find((w) => w.name === def.name);
-    let id: string;
-
-    if (prior) {
-      await mcp.callTool('update_workflow', {
-        workflowId: prior.id, name: def.name, description: def.description,
-        nodes: def.nodes, edges: def.edges,
-      });
-      id = prior.id;
-      console.log(`  updated:  ${id}`);
-    } else {
-      const created = await mcp.callTool('create_workflow', {
-        name: def.name, description: def.description,
-        nodes: def.nodes, edges: def.edges,
-        enabled: false,
-        idempotency_key: `lk-${def.key}-v1`,
-      });
-      id = extractId(created) ?? '';
-      console.log(`  created:  ${id || created.slice(0, 160)}`);
-    }
-    if (!id) continue;
-
-    const validation = await mcp.callTool('validate_workflow', { workflowId: id })
-      .catch((e) => `validation error: ${e.message}`);
-    const valid = /"valid"\s*:\s*true/.test(validation) || !/error|invalid/i.test(validation);
-    console.log(`  validate: ${valid ? 'ok' : 'ISSUES'} ${valid ? '' : validation.slice(0, 300)}`);
-
-    // Round-trip: export what KeeperHub stored, not what we sent.
-    const stored = await mcp.callTool('get_workflow', { workflowId: id });
-    writeFileSync(`${OUT_DIR}/${def.key}.json`, prettify(stored) + '\n', 'utf8');
-    console.log(`  exported: ${OUT_DIR}/${def.key}.json`);
-
-    manifest.push({ key: def.key, name: def.name, workflowId: id, triggers: triggerTypes(def) });
+  if (validateOnly) {
+    await validateExisting(defs, existing, storedManifest, mcp);
+    return;
   }
 
-  if (!validateOnly && manifest.length) {
-    writeFileSync(
-      'workflows/manifest.json',
-      JSON.stringify({ contract, generatedAt: new Date().toISOString(), workflows: manifest }, null, 2) + '\n',
-      'utf8'
+  const deployed = await deployDefinitions(defs, existing, storedManifest, mcp);
+  if (enable) await enableWithRollback(deployed, mcp);
+  await exportDefinitions(contract, deployed, mcp);
+}
+
+async function deployDefinitions(
+  definitions: WorkflowDef[],
+  existing: ExistingWorkflow[],
+  manifest: StoredManifest,
+  mcp: McpClient,
+): Promise<DeployedWorkflow[]> {
+  const deployed: DeployedWorkflow[] = [];
+  for (const definition of definitions) {
+    console.log(definition.name);
+    const prior = findPrior(definition, existing, manifest);
+    const id = await upsertDefinition(definition, prior, mcp);
+    await assertValid(id, mcp);
+    deployed.push({ definition, id, wasEnabled: prior?.enabled === true });
+  }
+  return deployed;
+}
+
+async function upsertDefinition(
+  definition: WorkflowDef,
+  prior: ExistingWorkflow | undefined,
+  mcp: McpClient,
+): Promise<string> {
+  if (prior) {
+    await mcp.callTool("update_workflow", {
+      workflowId: prior.id,
+      name: definition.name,
+      description: definition.description,
+      nodes: definition.nodes,
+      edges: definition.edges,
+    });
+    console.log(`  updated: ${prior.id}`);
+    return prior.id;
+  }
+  const created = await mcp.callTool("create_workflow", {
+    name: definition.name,
+    description: definition.description,
+    nodes: definition.nodes,
+    edges: definition.edges,
+    enabled: false,
+    idempotency_key: `lk-${definition.key}-v1`,
+  });
+  const id = extractId(created);
+  if (!id)
+    throw new Error(`create_workflow returned no id: ${created.slice(0, 160)}`);
+  console.log(`  created: ${id}`);
+  return id;
+}
+
+async function enableWithRollback(
+  deployed: DeployedWorkflow[],
+  mcp: McpClient,
+): Promise<void> {
+  const enabled: string[] = [];
+  try {
+    for (const workflow of deployed) {
+      if (workflow.wasEnabled) continue;
+      await mcp.callTool("update_workflow", {
+        workflowId: workflow.id,
+        enabled: true,
+      });
+      enabled.push(workflow.id);
+      console.log(`  enabled: ${workflow.id}`);
+    }
+  } catch (error) {
+    const rollback = await Promise.allSettled(
+      enabled.map((workflowId) =>
+        mcp.callTool("update_workflow", { workflowId, enabled: false }),
+      ),
     );
-    console.log(`\nmanifest: workflows/manifest.json (${manifest.length} workflows)`);
+    const rollbackFailures = rollback.filter(
+      (result) => result.status === "rejected",
+    ).length;
+    if (rollbackFailures) {
+      throw new Error(
+        `${errorMessage(error)}; ${rollbackFailures} enable rollback(s) failed`,
+      );
+    }
+    throw error;
   }
 }
 
-async function listExisting(mcp: McpClient): Promise<{ id: string; name: string }[]> {
-  try {
-    const text = await mcp.callTool('list_workflows', {});
-    const parsed = JSON.parse(text);
-    const items = Array.isArray(parsed) ? parsed : parsed.items ?? [];
-    return items.map((w: any) => ({ id: w.id, name: w.name }));
-  } catch {
-    return [];
+async function exportDefinitions(
+  contract: string,
+  deployed: DeployedWorkflow[],
+  mcp: McpClient,
+): Promise<void> {
+  mkdirSync(OUT_DIR, { recursive: true });
+  const workflows: Record<string, unknown>[] = [];
+  for (const { definition, id } of deployed) {
+    const stored = await mcp.callTool("get_workflow", { workflowId: id });
+    writeFileSync(
+      `${OUT_DIR}/${definition.key}.json`,
+      `${prettify(stored)}\n`,
+      "utf8",
+    );
+    workflows.push({
+      key: definition.key,
+      name: definition.name,
+      workflowId: id,
+      triggers: triggerTypes(definition),
+    });
   }
+  writeFileSync(
+    "workflows/manifest.json",
+    `${JSON.stringify({ contract, generatedAt: new Date().toISOString(), workflows }, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+async function validateExisting(
+  definitions: WorkflowDef[],
+  existing: ExistingWorkflow[],
+  manifest: StoredManifest,
+  mcp: McpClient,
+): Promise<void> {
+  for (const definition of definitions) {
+    console.log(definition.name);
+    const prior = findPrior(definition, existing, manifest);
+    if (!prior) {
+      console.log("  no stored workflow to validate");
+      continue;
+    }
+    await assertValid(prior.id, mcp, true);
+  }
+}
+
+function findPrior(
+  definition: WorkflowDef,
+  existing: ExistingWorkflow[],
+  manifest: StoredManifest,
+): ExistingWorkflow | undefined {
+  const storedId = manifest.workflows?.find(
+    (workflow) => workflow.key === definition.key,
+  )?.workflowId;
+  return existing.find(
+    (workflow) => workflow.id === storedId || workflow.name === definition.name,
+  );
+}
+
+async function assertValid(
+  workflowId: string,
+  mcp: McpClient,
+  deepCheck = false,
+): Promise<void> {
+  const raw = await mcp.callTool("validate_workflow", {
+    workflowId,
+    deepCheck,
+  });
+  const envelope = asObject(JSON.parse(raw));
+  const result = asObject(envelope.result);
+  if (result.valid !== true) {
+    throw new Error(
+      `workflow ${workflowId} failed validation: ${raw.slice(0, 600)}`,
+    );
+  }
+  console.log(`  valid${deepCheck ? " (deep)" : ""}: ${raw.slice(0, 600)}`);
+}
+
+function readStoredManifest(): StoredManifest {
+  try {
+    return JSON.parse(
+      readFileSync("workflows/manifest.json", "utf8"),
+    ) as StoredManifest;
+  } catch {
+    return {};
+  }
+}
+
+async function listExisting(mcp: McpClient): Promise<ExistingWorkflow[]> {
+  const text = await mcp.callTool("list_workflows", {});
+  const parsed: unknown = JSON.parse(text);
+  const object = asObject(parsed);
+  let items: unknown[] = [];
+  if (Array.isArray(parsed)) items = parsed;
+  else if (Array.isArray(object.items)) items = object.items;
+
+  return items.flatMap((item) => {
+    const workflow = asObject(item);
+    const id = stringField(workflow, "id");
+    const name = stringField(workflow, "name");
+    return id && name ? [{ id, name, enabled: workflow.enabled === true }] : [];
+  });
+}
+
+async function resolveTelegramIntegration(
+  mcp: McpClient,
+): Promise<string | undefined> {
+  const text = await mcp.callTool("list_integrations", {});
+  const parsed: unknown = JSON.parse(text);
+  if (!Array.isArray(parsed)) return undefined;
+  for (const item of parsed) {
+    const integration = asObject(item);
+    if (stringField(integration, "type") === "telegram") {
+      return stringField(integration, "id");
+    }
+  }
+  return undefined;
 }
 
 function extractId(text: string): string | undefined {
   try {
-    const j = JSON.parse(text);
-    return j.id ?? j.workflowId ?? j.workflow?.id;
+    const parsed = asObject(JSON.parse(text));
+    const workflow = asObject(parsed.workflow);
+    return (
+      stringField(parsed, "id") ??
+      stringField(parsed, "workflowId") ??
+      stringField(workflow, "id")
+    );
   } catch {
     return text.match(/"(?:id|workflowId)"\s*:\s*"([^"]+)"/)?.[1];
   }
 }
 
 function prettify(text: string): string {
-  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
 }
 
-function triggerTypes(def: { nodes: any[] }): string[] {
+function triggerTypes(def: { nodes: unknown[] }): string[] {
   return def.nodes
-    .filter((n) => n.type === 'trigger')
-    .map((n) => n.data?.config?.triggerType ?? 'unknown');
+    .map(asObject)
+    .filter((node) => node.type === "trigger")
+    .map((node) => {
+      const data = asObject(node.data);
+      const config = asObject(data.config);
+      return stringField(config, "triggerType") ?? "unknown";
+    });
+}
+
+function asObject(value: unknown): JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : {};
+}
+
+function stringField(object: JsonObject, key: string): string | undefined {
+  return typeof object[key] === "string" ? object[key] : undefined;
 }
 
 function req(name: string): string {
@@ -130,4 +328,11 @@ function req(name: string): string {
   return v;
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

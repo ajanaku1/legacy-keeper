@@ -17,6 +17,7 @@ import { JsonRpcProvider, Wallet, parseEther, formatEther } from 'ethers';
 import { Contract } from 'ethers';
 import { McpClient } from '../../agent/keeperhub/mcp-client';
 import { KeeperHubExecutor } from '../../agent/executor/keeperhub';
+import { OnchainExecutionVerifier } from '../../agent/executor/onchain-verifier';
 import { AuditLedger } from '../../agent/audit/ledger';
 
 const CHAIN_ID = 11155111;
@@ -86,7 +87,13 @@ async function main() {
     apiKey: req('KEEPERHUB_API_KEY'),
   });
   const ledger = new AuditLedger();
-  const executor = new KeeperHubExecutor(mcp, ledger, CHAIN_ID, contractAddress);
+  const executor = new KeeperHubExecutor(
+    mcp,
+    ledger,
+    CHAIN_ID,
+    contractAddress,
+    new OnchainExecutionVerifier(req('SEPOLIA_RPC_URL'), contractAddress)
+  );
 
   const server = await mcp.connect();
   console.log(`\nconnected: ${server.name} v${server.version}`);

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Sentinel B — Monitored Lock</title>
+  <desc id="desc">A split geometric shackle protects a body containing a bright liveness core.</desc>
+  <path fill="#031B13" fill-opacity=".68" d="M0 0h512v512H0z"/>
+  <path fill="#020A07" d="M128 224v-72l72-72h40v64h-16l-32 32v48h-64ZM384 224v-72l-72-72h-40v64h16l32 32v48h64Z"/>
+  <path fill="#043D2B" d="M96 208h320v224H96z"/>
+  <path fill="#020A07" d="M128 240h256v160H128z"/>
+  <path fill="#06B171" d="M128 240h256v24H128z"/>
+  <path fill="#09FD67" d="M224 288h64v64h-64z"/>
+</svg>

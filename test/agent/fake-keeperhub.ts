@@ -18,37 +18,44 @@ export interface FakeOptions {
   expireSessionTimes?: number;
   /** Omit the Mcp-Session-Id header on initialize. */
   omitSessionHeader?: boolean;
-  /** Fail the first N tools/call with a transport-level 500. */
+  /** Fail the first N tools/call with a transport-level status. */
   transportFailTimes?: number;
+  transportStatus?: number;
   /** Return a 402 challenge from tools/call. */
   paymentRequired?: boolean;
   /** Return unparseable body from tools/call. */
   malformed?: boolean;
   /** Per-execution status payloads returned by get_direct_execution_status. */
   executionStatus?: Record<string, unknown>;
+  /** Payload returned when a direct execution is submitted. */
+  submissionResult?: Record<string, unknown>;
+  /** Raw tool text returned when a direct execution is submitted. */
+  submissionText?: string;
 }
 
 export interface FakeHandle {
   url: string;
   close: () => Promise<void>;
   /** Every tools/call name received, in order. */
-  calls: { name: string; args: any }[];
+  calls: { name: string; args: Record<string, unknown> }[];
   idempotencyKeys: string[];
+  transportRequests: () => number;
 }
 
 export async function startFakeKeeperHub(opts: FakeOptions = {}): Promise<FakeHandle> {
-  const calls: { name: string; args: any }[] = [];
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
   const idempotencyKeys: string[] = [];
   let expiries = opts.expireSessionTimes ?? 0;
   let transportFails = opts.transportFailTimes ?? 0;
+  let transportRequests = 0;
 
   const server: Server = createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      let msg: any;
+      let msg: JsonRpcRequest;
       try {
-        msg = JSON.parse(body);
+        msg = JSON.parse(body) as JsonRpcRequest;
       } catch {
         res.writeHead(400).end('bad json');
         return;
@@ -81,12 +88,13 @@ export async function startFakeKeeperHub(opts: FakeOptions = {}): Promise<FakeHa
       }
 
       if (msg.method === 'tools/call') {
-        const name = msg.params?.name;
+        transportRequests++;
+        const name = msg.params?.name ?? '';
         const args = msg.params?.arguments ?? {};
 
         if (transportFails > 0) {
           transportFails--;
-          res.writeHead(500).end('upstream boom');
+          res.writeHead(opts.transportStatus ?? 500).end('upstream boom');
           return;
         }
         if (expiries > 0) {
@@ -129,13 +137,31 @@ export async function startFakeKeeperHub(opts: FakeOptions = {}): Promise<FakeHa
 
         reply({
           jsonrpc: '2.0', id: msg.id,
-          result: { content: [{ type: 'text', text: JSON.stringify({ status: 'completed', executionId: 'exec-fake-1' }) }] },
+          result: {
+            content: [{
+              type: 'text',
+              text: opts.submissionText ?? JSON.stringify(
+                opts.submissionResult ?? { status: 'completed', executionId: 'exec-fake-1' }
+              ),
+            }],
+          },
         });
         return;
       }
 
       if (msg.method === 'tools/list') {
-        reply({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'execute_contract_call' }] } });
+        reply({
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            tools: [
+              {
+                name: 'execute_contract_call',
+                inputSchema: { type: 'object' },
+              },
+            ],
+          },
+        });
         return;
       }
 
@@ -150,6 +176,16 @@ export async function startFakeKeeperHub(opts: FakeOptions = {}): Promise<FakeHa
     url: `http://127.0.0.1:${port}/mcp`,
     calls,
     idempotencyKeys,
+    transportRequests: () => transportRequests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+interface JsonRpcRequest {
+  id?: number;
+  method?: string;
+  params?: {
+    name?: string;
+    arguments?: Record<string, unknown>;
   };
 }

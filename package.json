@@ -6,6 +6,7 @@
   "scripts": {
     "test": "hardhat test",
     "test:agent": "vitest run",
+    "test:dashboard": "vitest run --config dashboard/vitest.config.ts",
     "compile": "hardhat compile",
     "node": "hardhat node",
     "verify:all": "bash loop/guardrails/verify.sh",

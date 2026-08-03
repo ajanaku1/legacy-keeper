@@ -10,7 +10,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { McpClient, McpError } from '../../agent/keeperhub/mcp-client';
-import { KeeperHubExecutor } from '../../agent/executor/keeperhub';
+import { ExecutionVerifier, KeeperHubExecutor } from '../../agent/executor/keeperhub';
 import { AuditLedger } from '../../agent/audit/ledger';
 import { startFakeKeeperHub, FakeHandle } from './fake-keeperhub';
 import { chooseRoute, confirmRoute, assertRoutesExclusive } from '../../agent/keeperhub/route-policy';
@@ -24,6 +24,13 @@ afterEach(async () => { await fake?.close(); fake = null; });
 const ledgerPath = () => join(mkdtempSync(join(tmpdir(), 'lk-')), 'audit.jsonl');
 const client = (url: string, extra = {}) =>
   new McpClient({ url, apiKey: 'kh_test', baseDelayMs: 1, ...extra });
+const verifier: ExecutionVerifier = {
+  verify: async () => ({
+    verified: true,
+    event: 'VerifiedEvent',
+    resultingState: 'verified=true',
+  }),
+};
 
 describe('MCP client — handshake', () => {
   it('reads the session id from the response header, not the body', async () => {
@@ -44,6 +51,19 @@ describe('MCP client — handshake', () => {
     const c = client(fake.url);
     await c.connect();
     expect(await c.listTools()).toContain('execute_contract_call');
+  });
+
+  it('preserves live tool input schemas for capability inspection', async () => {
+    fake = await startFakeKeeperHub();
+    const c = client(fake.url);
+    await c.connect();
+
+    const tools = await c.listToolDefinitions();
+
+    expect(tools[0]).toMatchObject({
+      name: 'execute_contract_call',
+      inputSchema: { type: 'object' },
+    });
   });
 
   it('re-handshakes and recovers when the session expires mid-call', async () => {
@@ -83,7 +103,7 @@ describe('Executor — settlement semantics', () => {
     });
     const c = client(fake.url); await c.connect();
     const ledger = new AuditLedger(ledgerPath());
-    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract');
+    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
     const r = await ex.executeInheritance({ type: 'manual', source: 'test' }, { maxAttempts: 1 });
     expect(r.success).toBe(true);
@@ -99,7 +119,7 @@ describe('Executor — settlement semantics', () => {
     });
     const c = client(fake.url); await c.connect();
     const ledger = new AuditLedger(ledgerPath());
-    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract');
+    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
     const r = await ex.executeInheritance({ type: 'scheduled', source: 'test' }, { maxAttempts: 1 });
     expect(r.success).toBe(false);
@@ -113,7 +133,7 @@ describe('Executor — settlement semantics', () => {
     });
     const c = client(fake.url); await c.connect();
     const ledger = new AuditLedger(ledgerPath());
-    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract');
+    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
     await ex.executeInheritance(
       { type: 'scheduled', source: 'test' },
@@ -130,7 +150,7 @@ describe('Executor — settlement semantics', () => {
     const c = client(fake.url); await c.connect();
     const path = ledgerPath();
     const ledger = new AuditLedger(path);
-    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract');
+    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
     await ex.executeInheritance({ type: 'scheduled', source: 'test' }, { maxAttempts: 1 });
     const entries = ledger.all();
@@ -167,11 +187,9 @@ describe('Route policy — sponsorship and privacy are distinct', () => {
     expect(chooseRoute('executeInheritance').route).toBe('sponsored');
   });
 
-  it('routes evacuation privately', () => {
-    // An evacuation transaction announces "these funds are moving". It must
-    // not be broadcast publicly just because sponsorship is cheaper.
-    expect(chooseRoute('evacuate').route).toBe('private');
-    expect(chooseRoute('panicButton').route).toBe('private');
+  it('does not claim private routing before KeeperHub exposes a request field', () => {
+    expect(chooseRoute('evacuate').route).toBe('default');
+    expect(chooseRoute('panicButton').route).toBe('default');
   });
 
   it('refuses to describe one execution as both sponsored and private', () => {
@@ -194,12 +212,12 @@ describe('Route policy — sponsorship and privacy are distinct', () => {
     fake = await startFakeKeeperHub();
     const c = client(fake.url); await c.connect();
     const ledger = new AuditLedger(ledgerPath());
-    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract');
+    const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
     await ex.executeEvacuation(
       { nonce: 1, deadline: 2, signature: '0x' },
       { type: 'panic', source: 'test' },
       { maxAttempts: 1 }
     );
-    expect(ledger.all()[0].route?.requested).toBe('private');
+    expect(ledger.all()[0].route?.requested).toBe('default');
   });
 });

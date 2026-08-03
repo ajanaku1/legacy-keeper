@@ -1,6 +1,6 @@
 {
   "contract": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA",
-  "generatedAt": "2026-07-27T23:12:11.985Z",
+  "generatedAt": "2026-08-02T00:24:04.324Z",
   "workflows": [
     {
       "key": "liveness-monitor",
@@ -28,7 +28,7 @@
     },
     {
       "key": "grace-watch",
-      "name": "LegacyKeeper — Grace Period Watch",
+      "name": "LegacyKeeper — Heartbeat Event Watch",
       "workflowId": "sux1hhjj0u6an7p6vddp2",
       "triggers": [
         "Event"

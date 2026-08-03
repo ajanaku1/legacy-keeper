@@ -1,158 +1,135 @@
-# From clone to a KeeperHub-executed transaction
+# Clean-clone tutorial
 
-Target: **under 5 minutes** of hands-on time, plus waiting on a faucet.
+The starter takes a new clone to a KeeperHub-sponsored Sepolia heartbeat. The
+script does not treat webhook acceptance as success. It waits for KeeperHub,
+checks the transaction receipt, and confirms that `lastHeartbeat` advanced.
 
-Everything below was run end to end on a clean machine. Where a step has a
-gotcha that cost us time, it says so — those are the parts the docs don't warn
-you about.
+## Prerequisites
 
----
+- Node.js 18, 20, or 22
+- npm
+- A funded Sepolia burner wallet
+- A KeeperHub organization API key (`kh_...`)
+- A user-scoped KeeperHub webhook key (`wfb_...`)
+- A Telegram integration in the same KeeperHub organization
+- A Telegram chat ID for workflow notifications
 
-## 0 · What you need
+Use a burner wallet with Sepolia ETH. Do not put a mainnet key in this project.
 
-| | |
+## 1. Clone and create the environment file
+
+```bash
+git clone https://github.com/ajanaku1/legacy-keeper.git
+cd legacy-keeper
+nvm use
+./starter/setup.sh
+```
+
+The first run creates `.env` and stops. Add these values:
+
+| Variable | Purpose |
 |---|---|
-| Node | **18, 20 or 22**. Hardhat rejects anything newer. `nvm use` reads the repo's `.nvmrc`. |
-| KeeperHub account | [app.keeperhub.com](https://app.keeperhub.com) — free to create |
-| Sepolia ETH | ~0.05, from [sepoliafaucet.com](https://sepoliafaucet.com) or the [Google faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia) |
+| `KEEPERHUB_API_KEY` | Aggregate MCP access for workflow creation and execution inspection |
+| `KEEPERHUB_WEBHOOK_API_KEY` | Bearer credential for the heartbeat and evacuation webhooks |
+| `SEPOLIA_RPC_URL` | Receipt and resulting-state verification |
+| `DEPLOYER_PRIVATE_KEY` | Sepolia burner that owns the new contract and signs heartbeat typed data |
+| `TELEGRAM_CHAT_ID` | Workflow notification destination |
 
-> **Node version is the single most common failure.** On Node 25 Hardhat prints
-> a warning and then behaves unpredictably. On Node 26 it may not run at all.
+Leave `LEGACY_KEEPER_ADDRESS` empty to deploy a new contract. To reuse a contract
+owned by the burner key, set its address before the second run.
 
----
+KeeperHub API keys come from **Settings > API Keys**. The workflow webhook uses:
 
-## 1 · Install
+```http
+Authorization: Bearer wfb_your_webhook_key
+Content-Type: application/json
+```
+
+The MCP client handles the required protocol sequence: `initialize`,
+`notifications/initialized`, then `tools/call`. It reads `Mcp-Session-Id` from
+the response header.
+
+## 2. Run the complete path
 
 ```bash
-git clone <this-repo> && cd legacy-keeper
-nvm use          # or: brew install node@22
-npm install
+./starter/setup.sh
 ```
 
-## 2 · Credentials
+Review the transaction and workflow warning, then confirm. For CI or an
+already-reviewed testnet environment, use:
 
 ```bash
-cp .env.example .env
+./starter/setup.sh --yes
 ```
 
-**KeeperHub API key** — app.keeperhub.com → **Settings → API Keys →
-Organisation** tab. Keys begin `kh_`.
+The script runs these operations in order:
 
-Or skip the key entirely and authorise in a browser:
+1. Installs the root and dashboard lockfiles with `npm ci`.
+2. Compiles the contract and runs contract, agent, and dashboard tests.
+3. Deploys `LegacyKeeper.sol` to Sepolia when no address is configured.
+4. Writes the public contract address back to `.env`.
+5. Creates, validates, exports, and enables the five KeeperHub workflows.
+6. Signs a short-lived EIP-712 heartbeat with the owner burner.
+7. Sends only `{nonce, deadline, signature}` to the workflow-specific webhook.
+8. Polls KeeperHub settlement, verifies the receipt, and rereads the contract.
+
+The successful final line is:
+
+```text
+WORKFLOW DROVE THE CONTRACT
+```
+
+## 3. Open the dashboard
 
 ```bash
-claude mcp add --transport http keeperhub https://app.keeperhub.com/mcp
+cd dashboard
+npm run dev
 ```
 
-**Deployer key** — a burner, never a wallet with real funds:
+Open [http://localhost:3000](http://localhost:3000), connect the owner wallet,
+and use **Check in now**. The wallet signs typed data but sends no transaction.
+The server submits the signature through KeeperHub and returns evidence only
+after settlement, receipt, event, and state checks pass.
+
+## 4. Verify the repository
 
 ```bash
-node -e "console.log(require('ethers').Wallet.createRandom().privateKey)"
+./verify.sh
 ```
 
-Run it **twice**. The second key is your *recovery key*, and it must live
-somewhere the first one doesn't — that separation is the entire point of
-emergency evacuation. Only its **address** goes in `.env`.
-
-**Fund two wallets**, not one:
-
-1. your deployer address
-2. the wallet KeeperHub executes with — app.keeperhub.com → Integrations
-
-> Forgetting the second is why a workflow that looks correct does nothing.
-
-## 3 · Deploy
+Useful focused commands:
 
 ```bash
-npx hardhat run scripts/deploy.ts --network sepolia
+npm test
+npm run test:agent
+npm run test:dashboard
+npm --prefix dashboard run typecheck
+npm --prefix dashboard run build
 ```
 
-Copy the printed address into `LEGACY_KEEPER_ADDRESS` in `.env`.
+## Troubleshooting
 
-For a demo you can watch, compress the timers:
+### Node version rejected
 
-```bash
-DEMO_TIMEOUT_SECONDS=120 DEMO_GRACE_SECONDS=60 \
-  npx hardhat run scripts/deploy.ts --network sepolia
-```
+Run `nvm use`. Hardhat supports Node 18, 20, and 22 in this repository.
 
-## 4 · Configure the estate
+### Workflow enable fails at Telegram
 
-```bash
-LK_ADDRESS=0xYourContract npx hardhat run scripts/configure-demo.ts --network sepolia
-```
+Add a Telegram integration in KeeperHub and set `TELEGRAM_CHAT_ID` in `.env`.
+The starter will not enable a workflow with a placeholder notification target.
 
-Adds two beneficiaries (60/40) and funds the contract.
+### Webhook returns 401 or 403
 
-> Shares must total **exactly** 10,000 bps. Distribution reverts otherwise, and
-> it reverts at execution time — when nobody is around to fix it.
+Use the user-scoped `wfb_` key in `KEEPERHUB_WEBHOOK_API_KEY`. The webhook uses
+Bearer authentication. The organization `kh_` key is for MCP calls.
 
-## 5 · Create the workflows
+### KeeperHub says completed but the script fails
 
-```bash
-npm run workflows:deploy
-```
+`completed` is a settlement phase, not proof of success. The runner requires a
+successful execution, transaction hash, successful receipt, and advanced
+`lastHeartbeat`. A missing field fails the run.
 
-Creates five workflows — Schedule, Webhook ×2, Event and Block triggers — and
-exports what KeeperHub actually stored to `workflows/exported/`. That export is
-a round-trip, not a copy of what was sent, so it proves the definition survived.
+### A retry repeats an old failure
 
-They are created **disabled**; non-manual triggers stay dormant until you
-enable them in the UI.
-
-> There is no dry-run. `validate_workflow` needs a `workflowId`, so a workflow
-> must exist before it can be validated. Expect to create, inspect, and delete
-> a few while iterating.
-
-## 6 · Execute through KeeperHub
-
-```bash
-npx tsx scripts/workflows/run-heartbeat.ts
-```
-
-Signs an EIP-712 heartbeat locally, hands it to the KeeperHub workflow, polls
-until settlement, then verifies `lastHeartbeat` advanced **on-chain** rather
-than trusting the reported status.
-
-You should see a real transaction hash. That is the finish line.
-
-## 7 · Watch it
-
-```bash
-npm run agent                     # monitor
-npm run agent:bot                 # monitor + Telegram
-cd dashboard && npm install && npm run dev
-```
-
----
-
-## Things that will cost you time
-
-**The MCP handshake order is strict.** `initialize`, then
-`notifications/initialized`, sequentially, before any `tools/call`. The session
-id comes back in the **`Mcp-Session-Id` response header**, not the body. Get it
-wrong and you get `-32003 Session not initialized`.
-
-**Scalars are strings.** `chain_id`, `function_args` and `gas_limit_multiplier`
-on `execute_contract_call` are all string-typed, and `function_args` is a JSON
-array *encoded as a string*:
-
-```jsonc
-{ "chain_id": 11155111,   "function_args": [] }    // rejected
-{ "chain_id": "11155111", "function_args": "[]" }  // accepted
-```
-
-**`status: "completed"` does not mean success.** It means settled. Read
-`result.success` and `result.reverted`. Treating `completed` as success will
-report a reverted transaction as done.
-
-**Never reuse an `idempotency_key` across retries.** KeeperHub caches the
-outcome — including failures — and replays it. Reuse one and your agent
-receives the first failure forever while the chain says it should have
-succeeded. Scope the key per *attempt*.
-
-**The workflow schema is real but undocumented.** `list_action_schemas` returns
-`workflowStructure`, `templateSyntax`, all 6 triggers and 442 actions. Nothing
-on the docs site points to it.
-
-Full write-ups with reproductions: [`reports/friction-log.md`](../../reports/friction-log.md).
+Do not reuse one idempotency key across attempts. KeeperHub caches failure
+results as well as successful results.

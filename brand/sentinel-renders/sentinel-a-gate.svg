@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Sentinel A — Security Gate</title>
+  <desc id="desc">Two hardened access-control doors isolate a bright monitored core.</desc>
+  <path fill="#031B13" fill-opacity=".68" d="M0 0h512v512H0z"/>
+  <path fill="#020A07" d="M72 88h152v104h-48v128h48v104H72V88Z"/>
+  <path fill="#043D2B" d="M288 88h152v336H288V320h48V192h-48V88Z"/>
+  <path fill="#06B171" d="M112 128h72v32h-40v192h40v32h-72V128Z"/>
+  <path fill="#09FD67" d="M224 224h64v64h-64z"/>
+</svg>

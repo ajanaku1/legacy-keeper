@@ -9,17 +9,16 @@
  * approvals. The estate would then be undistributable, and we would find out
  * at execution time — the one moment nobody is available to fix it.
  *
- * So we buy an independent opinion. `approval-risk-rescan` on the KeeperHub
- * marketplace re-reads the live on-chain allowance for $0.01. Paying a third
- * party to check our own critical assumption is the load-bearing use of x402
- * here: remove it and the assumption goes unverified.
+ * This module retains support for KeeperHub marketplace listings. The active
+ * product-linked allowance monitor lives in `agent/payments`: it buys a $0.003
+ * OneSource read with explicit owner, token, spender, and Sepolia inputs.
  *
  * ## Protocol shape (captured from a real 402)
  *
  *   {"x402Version":2,"accepts":[{"scheme":"exact",
  *     "network":"eip155:8453",                  // Base mainnet
  *     "asset":"0x833589fC…2913",                // USDC
- *     "amount":"10000",                         // 0.01 USDC, 6dp
+ *     "amount":"3000",                          // 0.003 USDC, 6dp
  *     "payTo":"0xc7d9…4dc5","maxTimeoutSeconds":300}]}
  *
  * The MCP tool does not auto-pay. Settlement goes through a wallet that can

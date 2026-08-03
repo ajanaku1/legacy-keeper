@@ -19,6 +19,7 @@ import { Wallet } from 'ethers';
 import { McpClient } from '../../agent/keeperhub/mcp-client';
 import { KeeperHubExecutor } from '../../agent/executor/keeperhub';
 import { AuditLedger } from '../../agent/audit/ledger';
+import { OnchainExecutionVerifier } from '../../agent/executor/onchain-verifier';
 
 const CHAIN_ID = 11155111;
 
@@ -33,7 +34,13 @@ async function main() {
   const owner = new Wallet(ownerKey);
   const mcp = new McpClient({ url: mcpUrl, apiKey });
   const ledger = new AuditLedger();
-  const executor = new KeeperHubExecutor(mcp, ledger, CHAIN_ID, contractAddress);
+  const executor = new KeeperHubExecutor(
+    mcp,
+    ledger,
+    CHAIN_ID,
+    contractAddress,
+    new OnchainExecutionVerifier(requireEnv('SEPOLIA_RPC_URL'), contractAddress)
+  );
 
   const server = await mcp.connect();
   console.log(`connected: ${server.name} v${server.version}`);

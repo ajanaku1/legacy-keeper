@@ -24,7 +24,7 @@ evacuation_executed	tx	0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f2
 sponsorship_demonstrated	tx	0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598	sponsored true
 failure_then_recovery	tx	0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc	3 reverts then settled
 audit_ledger_fields	file	loop/memory/audit.jsonl	trigger, simulation, tx, gas, outcome, retries, timestamp
-agent_reliability_suite	gate	G9	18 vitest cases against a local fake server
+agent_reliability_suite	gate	G9	51 vitest cases against a local fake server
 route_policy_exclusive	gate	G9	assertRoutesExclusive covered by test
 no_fabricated_success	gate	G3	fabricated values and stub language
 api_claims_are_real	gate	G8	naming an API requires calling it
@@ -32,9 +32,8 @@ starter_tutorial	file	starter/docs/tutorial.md	clean-machine path
 readme_truthful	file	README.md	capability matrix is evidence-based
 upstream_reports	file	reports/friction-log.md	9 findings with reproductions
 repo_published	file	README.md	https://github.com/ajanaku1/legacy-keeper
-x402_payment_proof	tx	0xc91e3026f9695639fb2e262677b4e77a752efae89a7c32312f0319bc11074728	Base mainnet, $0.01 USDC, exec 9kctohfxdeqgrl2pv5kym
-# ---- deliberately not met ----
-mpp_demonstrated	open	no Tempo USDC.e	same wallet, same blocker
-private_route_confirmed	open	no API surface	see friction-log #09
-mainnet_execution	open	excluded from scope	user decision
-demo_video	open	excluded from scope	user decision
+x402_payment_proof	tx	0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5	Base mainnet, $0.003 USDC, paid allowance evidence retained
+mpp_boundary	file	reports/paid-rail-evidence.json	live discovery retained; execution blocked by zero Tempo balance
+private_route_boundary	file	reports/keeperhub-coverage.md	live schema exposes no request parameter or route receipt
+mainnet_boundary	file	README.md	Sepolia-only scope stated in the capability matrix
+demo_video	file	video/out/legacykeeper-demo.mp4	50-second narrated evidence walkthrough

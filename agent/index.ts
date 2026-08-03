@@ -14,6 +14,7 @@ import { KeeperHubExecutor, TriggerInfo } from './executor/keeperhub';
 import { LivenessMonitor, LivenessState } from './liveness/monitor';
 import { AlertNotifier } from './alert/notifier';
 import { AuditLedger } from './audit/ledger';
+import { OnchainExecutionVerifier } from './executor/onchain-verifier';
 
 export interface AgentConfig {
   keeperhubApiKey: string;
@@ -57,7 +58,8 @@ export class LegacyKeeperAgent {
       this.mcp,
       this.ledger,
       config.chainId,
-      config.contractAddress
+      config.contractAddress,
+      new OnchainExecutionVerifier(config.rpcUrl, config.contractAddress)
     );
     this.monitor = new LivenessMonitor(config.rpcUrl, config.contractAddress);
     this.alerts = new AlertNotifier({

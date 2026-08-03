@@ -1,7 +1,7 @@
 {
   "id": "sux1hhjj0u6an7p6vddp2",
-  "name": "LegacyKeeper — Grace Period Watch",
-  "description": "Listens for GracePeriodEntered on-chain and alerts immediately. Escalation stops depending on a polling loop being alive.",
+  "name": "LegacyKeeper — Heartbeat Event Watch",
+  "description": "Listens for HeartbeatRecorded on-chain and confirms that a liveness check-in was observed independently of the webhook execution path.",
   "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
   "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
   "isAnonymous": false,
@@ -16,11 +16,11 @@
       "id": "trigger-1",
       "data": {
         "type": "trigger",
-        "label": "GracePeriodEntered",
+        "label": "HeartbeatRecorded",
         "config": {
           "network": "11155111",
-          "eventName": "GracePeriodEntered",
-          "contractABI": "[{\"name\":\"GracePeriodEntered\",\"type\":\"event\",\"inputs\":[{\"name\":\"deadline\",\"type\":\"uint64\",\"indexed\":false}]}]",
+          "eventName": "HeartbeatRecorded",
+          "contractABI": "[{\"name\":\"HeartbeatRecorded\",\"type\":\"event\",\"inputs\":[{\"name\":\"sender\",\"type\":\"address\",\"indexed\":true},{\"name\":\"timestamp\",\"type\":\"uint64\",\"indexed\":false}]}]",
           "triggerType": "Event",
           "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
         },
@@ -36,11 +36,12 @@
       "id": "alert",
       "data": {
         "type": "action",
-        "label": "Escalate To Owner",
+        "label": "Confirm Heartbeat",
         "config": {
-          "chatId": "000000000",
-          "message": "LegacyKeeper: grace period has begun. Check in now to cancel distribution.",
-          "actionType": "telegram/send-message"
+          "chatId": "835617357",
+          "message": "LegacyKeeper: sponsored heartbeat confirmed onchain.",
+          "actionType": "telegram/send-message",
+          "integrationId": "zjnwqnhvy2gyp7irddiuv"
         },
         "status": "idle"
       },
@@ -59,10 +60,10 @@
     }
   ],
   "visibility": "private",
-  "enabled": false,
+  "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:10.950Z",
-  "updatedAt": "2026-07-27T23:12:10.950Z",
+  "updatedAt": "2026-08-02T00:24:02.115Z",
   "seededAt": null,
   "isListed": false,
   "listedSlug": null,

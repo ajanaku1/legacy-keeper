@@ -1,151 +1,93 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ============================================================
-# LegacyKeeper — Starter Kit Setup
-# ============================================================
-# This script takes you from `git clone` to a KeeperHub-executed
-# transaction in under 5 minutes.
-#
-# Prerequisites:
-#   - Node.js 18+
-#   - npm or yarn
-#   - A KeeperHub account (https://keeperhub.com)
-#   - An Ethereum wallet with Sepolia testnet ETH
-#
-# Usage:
-#   chmod +x setup.sh
-#   ./setup.sh
-# ============================================================
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
-echo "╔════════════════════════════════════════════════╗"
-echo "║     LegacyKeeper — Starter Kit Setup          ║"
-echo "║     Your KeeperHub agent in 5 minutes          ║"
-echo "╚════════════════════════════════════════════════╝"
-echo ""
+say() { printf '\n%s\n' "$1"; }
+fail() { printf 'setup failed: %s\n' "$1" >&2; exit 1; }
 
-# ─── Step 1: Check prerequisites ───
-echo "📋 Step 1: Checking prerequisites..."
-echo ""
+command -v node >/dev/null 2>&1 || fail "Node.js 18, 20, or 22 is required"
+command -v npm >/dev/null 2>&1 || fail "npm is required"
 
-if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is not installed. Please install Node.js 18+ first."
-    exit 1
-fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+case "$NODE_MAJOR" in
+  18|20|22) ;;
+  *) fail "Node.js 18, 20, or 22 is required; found $(node -v)" ;;
+esac
 
-NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "❌ Node.js 18+ is required. Current version: $(node -v)"
-    exit 1
-fi
-echo "   ✅ Node.js $(node -v)"
+say "LegacyKeeper clean-clone setup"
+printf '%s\n' \
+  "This installs both apps, compiles the contract, deploys to Sepolia when" \
+  "LEGACY_KEEPER_ADDRESS is empty, creates and enables the KeeperHub workflows," \
+  "then sends and independently verifies one sponsored heartbeat."
 
-if ! command -v npm &> /dev/null; then
-    echo "❌ npm is not installed."
-    exit 1
-fi
-echo "   ✅ npm $(npm -v)"
-
-# ─── Step 2: Install dependencies ───
-echo ""
-echo "📦 Step 2: Installing dependencies..."
-npm install
-
-# ─── Step 3: Configure environment ───
-echo ""
-echo "🔧 Step 3: Setting up configuration..."
 if [ ! -f .env ]; then
-    cp .env.example .env
-    echo "   ✅ Created .env from .env.example"
-    echo ""
-    echo "   ⚠️  Please edit .env with your credentials:"
-    echo "      - KEEPERHUB_API_KEY (from https://keeperhub.com/settings)"
-    echo "      - RPC_URL (Infura/Alchemy Sepolia endpoint)"
-    echo "      - OWNER_PRIVATE_KEY (your wallet)"
-    echo "      - RECOVERY_PUBLIC_KEY (separate recovery key)"
-    echo "      - TELEGRAM_BOT_TOKEN (optional, for alerts)"
-    echo ""
-    read -p "   Press Enter once you've configured .env..."
-else
-    echo "   ✅ .env already exists"
+  cp .env.example .env
+  printf '\nCreated .env. Fill the required values, then run this script again:\n'
+  printf '  KEEPERHUB_API_KEY\n  KEEPERHUB_WEBHOOK_API_KEY\n  SEPOLIA_RPC_URL\n'
+  printf '  DEPLOYER_PRIVATE_KEY\n  TELEGRAM_CHAT_ID\n\n'
+  printf 'The KeeperHub organization must also have a Telegram integration.\n'
+  exit 2
 fi
 
-# ─── Step 4: Connect to KeeperHub ───
-echo ""
-echo "🔗 Step 4: Connecting to KeeperHub MCP server..."
-echo ""
-echo "   Run this command in your terminal:"
-echo ""
-echo "   claude mcp add --transport http keeperhub \\"
-echo "     https://app.keeperhub.com/mcp \\"
-echo "     --header \"X-Api-Key: \${KEEPERHUB_API_KEY}\""
-echo ""
+set -a
+# shellcheck disable=SC1091
+source .env
+set +a
 
-# Check if KeeperHub is accessible
-if command -v curl &> /dev/null; then
-    if curl -s -o /dev/null -w "%{http_code}" "https://app.keeperhub.com/health" 2>/dev/null | grep -q "200"; then
-        echo "   ✅ KeeperHub is reachable"
-    else
-        echo "   ⚠️  KeeperHub health check failed (your API key may be needed)"
-    fi
+REQUIRED=(KEEPERHUB_API_KEY KEEPERHUB_WEBHOOK_API_KEY SEPOLIA_RPC_URL DEPLOYER_PRIVATE_KEY TELEGRAM_CHAT_ID)
+for name in "${REQUIRED[@]}"; do
+  [ -n "${!name:-}" ] || fail "$name is empty in .env"
+done
+
+if [ "${1:-}" != "--yes" ]; then
+  printf '\nThis run may deploy a Sepolia contract and enable automatic workflows.\n'
+  read -r -p "Continue? [y/N] " answer
+  case "$answer" in y|Y|yes|YES) ;; *) exit 0 ;; esac
 fi
 
-# ─── Step 5: Deploy the LegacyKeeper contract ───
-echo ""
-echo "📄 Step 5: Deploying the LegacyKeeper contract..."
-echo ""
-echo "   This will deploy LegacyKeeper.sol to Sepolia testnet."
-echo "   Make sure your .env has valid credentials."
-echo ""
-read -p "   Deploy now? (y/n) " -n 1 -r
-echo ""
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    npx hardhat run scripts/deploy.ts --network sepolia
-    echo "   ✅ Contract deployed!"
-else
-    echo "   ⏳ Skipping deployment. You can deploy later with:"
-    echo "      npm run deploy:contract"
+say "Installing dependencies"
+npm ci
+npm --prefix dashboard ci
+
+say "Compiling and testing"
+npm run compile
+npm test
+npm run test:agent
+npm run test:dashboard
+npm --prefix dashboard run typecheck
+
+if [ -z "${LEGACY_KEEPER_ADDRESS:-}" ]; then
+  say "Deploying LegacyKeeper to Sepolia"
+  DEPLOY_LOG="$(mktemp)"
+  trap 'rm -f "$DEPLOY_LOG"' EXIT
+  npm run deploy:sepolia | tee "$DEPLOY_LOG"
+  LEGACY_KEEPER_ADDRESS="$(sed -nE 's/.*LegacyKeeper deployed: (0x[0-9a-fA-F]{40}).*/\1/p' "$DEPLOY_LOG" | tail -1)"
+  [ -n "$LEGACY_KEEPER_ADDRESS" ] || fail "deployment returned no contract address"
+  export LEGACY_KEEPER_ADDRESS
+  ENV_NAME=LEGACY_KEEPER_ADDRESS ENV_VALUE="$LEGACY_KEEPER_ADDRESS" node -e '
+    const fs = require("node:fs");
+    const name = process.env.ENV_NAME;
+    const value = process.env.ENV_VALUE;
+    const path = ".env";
+    const source = fs.readFileSync(path, "utf8");
+    const line = `${name}=${value}`;
+    const next = new RegExp(`^${name}=.*$`, "m").test(source)
+      ? source.replace(new RegExp(`^${name}=.*$`, "m"), line)
+      : `${source.trimEnd()}\n${line}\n`;
+    fs.writeFileSync(path, next);
+  '
 fi
 
-# ─── Step 6: Configure KeeperHub workflows ───
-echo ""
-echo "⚡ Step 6: Registering KeeperHub workflows..."
-echo ""
-echo "   The starter kit includes two workflow templates:"
-echo ""
-echo "   1. Liveness & Inheritance:"
-echo "      templates/inheritance-workflow.json"
-echo ""
-echo "   2. Emergency Evacuation:"
-echo "      templates/evacuation-workflow.json"
-echo ""
-echo "   Upload these to KeeperHub via the dashboard or MCP API."
-echo ""
+say "Creating and enabling KeeperHub workflows"
+npm run workflows:deploy -- --enable
 
-# ─── Step 7: Send first heartbeat ───
-echo ""
-echo "💓 Step 7: Send your first heartbeat!"
-echo ""
-echo "   Run this to send a test heartbeat:"
-echo ""
-echo "   curl -X POST https://app.keeperhub.com/mcp \\"
-echo "     -H \"X-Api-Key: \${KEEPERHUB_API_KEY}\" \\"
-echo "     -d '{\"workflow\":\"heartbeat\",\"params\":{\"address\":\"\${OWNER_ADDRESS}\"}}'"
-echo ""
+say "Sending a signed heartbeat through the workflow webhook"
+npx tsx scripts/workflows/run-heartbeat.ts
 
-echo ""
-echo "╔════════════════════════════════════════════════╗"
-echo "║     ✅ Setup complete!                        ║"
-echo "║                                                ║"
-echo "║     Next steps:                                ║"
-echo "║     1. Configure beneficiaries in dashboard    ║"
-echo "║     2. Set up your safe vault address          ║"
-echo "║     3. Register your recovery key              ║"
-echo "║     4. Test the panic button                   ║"
-echo "║                                                ║"
-echo "║     See starter/docs/tutorial.md for full guide║"
-echo "╚════════════════════════════════════════════════╝"
+say "Setup complete"
+printf 'Contract: %s\n' "$LEGACY_KEEPER_ADDRESS"
+printf 'Dashboard: cd dashboard && npm run dev\n'
+printf 'Evidence: reports/live-workflow-evidence.json\n'

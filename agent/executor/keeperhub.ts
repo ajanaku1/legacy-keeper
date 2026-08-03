@@ -53,6 +53,25 @@ export interface ContractCallOptions {
   retryBaseDelayMs?: number;
 }
 
+export interface VerificationRequest {
+  action: string;
+  args: unknown[];
+  txHash: string;
+}
+
+export interface VerificationResult {
+  verified: boolean;
+  blockNumber?: number;
+  gasUsed?: string;
+  event?: string;
+  resultingState?: string;
+  error?: string;
+}
+
+export interface ExecutionVerifier {
+  verify(request: VerificationRequest): Promise<VerificationResult>;
+}
+
 // KeeperHub reports 'completed' for a settled direct execution — whether the
 // call itself succeeded is a separate `result.success` field. Treating
 // 'completed' as non-terminal makes the poller wait out its whole timeout on
@@ -76,12 +95,37 @@ interface Settlement {
   privateRoute?: boolean;
 }
 
+type JsonObject = Record<string, unknown>;
+type RouteDecision = ReturnType<typeof chooseRoute>;
+
+interface AttemptResult {
+  record: AuditEntry;
+  executionId?: string;
+  retryable: boolean;
+}
+
+interface AttemptContext {
+  executionKey: string;
+  attempt: number;
+  functionName: string;
+  args: unknown[];
+  trigger: TriggerInfo;
+  options: ContractCallOptions;
+  routeDecision: RouteDecision;
+}
+
+interface Submission {
+  executionId: string;
+  parsed: JsonObject;
+}
+
 export class KeeperHubExecutor {
   constructor(
     private readonly mcp: McpClient,
     private readonly ledger: AuditLedger,
     private readonly chainId: number,
-    private readonly contractAddress: string
+    private readonly contractAddress: string,
+    private readonly verifier: ExecutionVerifier
   ) {
     if (!contractAddress) {
       throw new Error('KeeperHubExecutor: contractAddress is required');
@@ -179,127 +223,145 @@ export class KeeperHubExecutor {
     const executionKey = newExecutionKey(functionName);
     const maxAttempts = options.maxAttempts ?? 3;
     const routeDecision = chooseRoute(functionName);
-
     let lastError = '';
+    let attemptsMade = 0;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const startedAt = Date.now();
-
-      const record: AuditEntry = {
-        executionKey,
-        attempt,
-        timestamp: new Date().toISOString(),
-        trigger,
-        action: functionName,
-        params: { args, ...options },
-        route: { requested: routeDecision.route, confirmed: false },
-        outcome: 'failed',
-      };
-
-      try {
-        // chain_id and function_args are STRINGS despite the schema showing
-        // them as scalar/array shapes — passing a number or a real array is
-        // rejected with a -32602 validation error. See reports/friction-log.md.
-        const payload: Record<string, unknown> = {
-          contract_address: this.contractAddress,
-          chain_id: String(this.chainId),
-          function_name: functionName,
-          function_args: JSON.stringify(args),
-          // Per ATTEMPT, not per action. KeeperHub caches the outcome against
-          // this key and replays it — so reusing one key across retries
-          // returns the first failure forever and recovery is impossible.
-          // Idempotency still holds where it matters: a transport-level
-          // duplicate of a single attempt is deduplicated, and the contract's
-          // executed flags remain the real guard against double distribution.
-          idempotency_key: `${executionKey}-a${attempt}`,
-        };
-        // Every scalar on this tool is string-typed, gas knobs included.
-        //
-        // A caller-supplied gas hint applies to the FIRST attempt only. If it
-        // fails we drop the override and let KeeperHub's estimator size the
-        // retry — a keeper whose own gas guess was wrong should defer to the
-        // estimator rather than repeat the same mistake three times.
-        if (options.gasLimitMultiplier !== undefined && attempt === 1) {
-          payload.gas_limit_multiplier = String(options.gasLimitMultiplier);
-        }
-        if (options.priorityFeeGwei !== undefined) {
-          payload.priority_fee_gwei = String(options.priorityFeeGwei);
-        }
-        if (options.value !== undefined) payload.value = options.value;
-
-        const raw = await this.mcp.callTool('execute_contract_call', payload);
-        const parsed = safeJson(raw);
-
-        const executionId =
-          parsed?.execution_id ?? parsed?.executionId ?? parsed?.id;
-        record.keeperhubExecutionId = executionId;
-        record.simulation = { ok: true, detail: 'accepted by KeeperHub' };
-
-        Object.assign(payload, routeDecision.payload);
-
-        const settled: Settlement = executionId
-          ? await this.awaitSettlement(String(executionId))
-          : { outcome: 'success', txHash: parsed?.tx_hash };
-
-        // Record what the platform says it did, not what we asked for. An
-        // execution reporting both routes would misdescribe the submission.
-        assertRoutesExclusive(settled);
-        const confirmed = confirmRoute(routeDecision, settled);
-        record.route = { requested: confirmed.route, confirmed: confirmed.confirmed };
-
-        record.txHash = settled.txHash ?? parsed?.tx_hash ?? parsed?.txHash;
-        record.gasUsed = settled.gasUsed;
-        record.blockNumber = settled.blockNumber;
-        record.outcome = settled.outcome;
-        record.error = settled.error;
-        record.durationMs = Date.now() - startedAt;
-
-        this.ledger.append(record);
-
-        if (settled.outcome === 'success') {
-          return {
-            success: true,
-            executionKey,
-            keeperhubExecutionId: executionId,
-            txHash: record.txHash,
-            gasUsed: record.gasUsed,
-            attempts: attempt,
-          };
-        }
-
-        lastError = settled.error ?? `execution ${settled.outcome}`;
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : String(error);
-        record.outcome = 'failed';
-        record.error = message;
-        record.simulation = { ok: false, detail: message };
-        record.durationMs = Date.now() - startedAt;
-        this.ledger.append(record);
-        lastError = message;
-
-        // A tool-level rejection (bad args, reverted precondition) will not
-        // succeed on a retry. Only transport faults are worth repeating.
-        if (error instanceof McpError && !error.retryable && error.code) break;
+      attemptsMade = attempt;
+      const result = await this.runAttempt({
+        executionKey, attempt, functionName, args, trigger, options, routeDecision,
+      });
+      const { record } = result;
+      if (record.outcome === 'success') {
+        return successfulResult(executionKey, attempt, result);
       }
-
-      if (attempt < maxAttempts) {
-        const base = options.retryBaseDelayMs ?? 1000;
-        const delay = base * 2 ** (attempt - 1) * (0.5 + Math.random());
-        console.log(
-          `[executor] ${functionName} attempt ${attempt} failed (${lastError}); ` +
-            `retrying in ${Math.round(delay / 1000)}s`
-        );
-        await new Promise((r) => setTimeout(r, delay));
-      }
+      lastError = record.error ?? `execution ${record.outcome}`;
+      if (!result.retryable || attempt === maxAttempts) break;
+      await this.pauseBeforeRetry(functionName, attempt, lastError, options);
     }
 
     return {
       success: false,
       executionKey,
-      attempts: maxAttempts,
+      attempts: attemptsMade,
       error: lastError,
     };
+  }
+
+  private async runAttempt(context: AttemptContext): Promise<AttemptResult> {
+    const startedAt = Date.now();
+    const record = newAuditRecord(context);
+    try {
+      const submission = await this.submit(context);
+      record.keeperhubExecutionId = submission.executionId;
+      record.simulation = { ok: true, detail: 'accepted by KeeperHub' };
+      const settled = await this.awaitSettlement(submission.executionId);
+      this.applySettlement(record, context.routeDecision, settled, submission);
+      await this.verifyOnchain(record, context.functionName, context.args);
+      return this.finishAttempt(record, startedAt, submission.executionId, true);
+    } catch (error) {
+      const message = errorMessage(error);
+      record.outcome = 'failed';
+      record.error = message;
+      record.simulation ??= { ok: false, detail: message };
+      const retryable = !(error instanceof McpError) || error.retryable;
+      return this.finishAttempt(record, startedAt, undefined, retryable);
+    }
+  }
+
+  private async submit(context: AttemptContext): Promise<Submission> {
+    const payload = this.buildPayload(context);
+    const raw = await this.mcp.callTool('execute_contract_call', payload);
+    const parsed = parseJsonObject(raw);
+    const executionId = firstString(parsed, ['execution_id', 'executionId', 'id']);
+    if (!executionId) {
+      throw new McpError('KeeperHub response missing execution id', -32603, false);
+    }
+    return { executionId, parsed };
+  }
+
+  private buildPayload(context: AttemptContext): Record<string, unknown> {
+    const { executionKey, attempt, functionName, args, options, routeDecision } = context;
+    const payload: Record<string, unknown> = {
+      contract_address: this.contractAddress,
+      chain_id: String(this.chainId),
+      function_name: functionName,
+      function_args: JSON.stringify(args),
+      idempotency_key: `${executionKey}-a${attempt}`,
+      ...routeDecision.payload,
+    };
+    if (options.gasLimitMultiplier !== undefined && attempt === 1) {
+      payload.gas_limit_multiplier = String(options.gasLimitMultiplier);
+    }
+    if (options.priorityFeeGwei !== undefined) {
+      payload.priority_fee_gwei = String(options.priorityFeeGwei);
+    }
+    if (options.value !== undefined) payload.value = options.value;
+    return payload;
+  }
+
+  private applySettlement(
+    record: AuditEntry,
+    decision: RouteDecision,
+    settled: Settlement,
+    submission: Submission
+  ): void {
+    assertRoutesExclusive(settled);
+    const route = confirmRoute(decision, settled);
+    record.route = { requested: route.route, confirmed: route.confirmed };
+    record.txHash =
+      settled.txHash ?? firstString(submission.parsed, ['tx_hash', 'txHash']);
+    record.gasUsed = settled.gasUsed;
+    record.blockNumber = settled.blockNumber;
+    record.outcome = settled.outcome;
+    record.error = settled.error;
+  }
+
+  private async verifyOnchain(
+    record: AuditEntry,
+    action: string,
+    args: unknown[]
+  ): Promise<void> {
+    if (record.outcome !== 'success' || !record.txHash) return;
+    const result = await this.verifier.verify({ action, args, txHash: record.txHash });
+    record.verification = {
+      receipt: result.verified,
+      event: result.event,
+      resultingState: result.resultingState,
+      error: result.error,
+    };
+    record.blockNumber = result.blockNumber ?? record.blockNumber;
+    record.gasUsed = result.gasUsed ?? record.gasUsed;
+    if (!result.verified) {
+      record.outcome = 'failed';
+      record.error = result.error ?? 'onchain verification failed';
+    }
+  }
+
+  private finishAttempt(
+    record: AuditEntry,
+    startedAt: number,
+    executionId: string | undefined,
+    retryable: boolean
+  ): AttemptResult {
+    record.durationMs = Date.now() - startedAt;
+    this.ledger.append(record);
+    return { record, executionId, retryable };
+  }
+
+  private async pauseBeforeRetry(
+    functionName: string,
+    attempt: number,
+    lastError: string,
+    options: ContractCallOptions
+  ): Promise<void> {
+    const base = options.retryBaseDelayMs ?? 1000;
+    const delay = base * 2 ** (attempt - 1) * (0.5 + Math.random());
+    console.log(
+      `[executor] ${functionName} attempt ${attempt} failed (${lastError}); ` +
+        `retrying in ${Math.round(delay / 1000)}s`
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /** Poll until KeeperHub reports a terminal state for this execution. */
@@ -311,36 +373,11 @@ export class KeeperHubExecutor {
     let delay = 2000;
 
     while (Date.now() < deadline) {
-      const parsed = safeJson(await this.getExecutionStatus(executionId));
-      const status = String(
-        parsed?.status ?? parsed?.state ?? ''
-      ).toLowerCase();
+      const parsed = parseJsonObject(await this.getExecutionStatus(executionId));
+      const status = (firstString(parsed, ['status', 'state']) ?? '').toLowerCase();
 
       if (TERMINAL_STATUSES.includes(status)) {
-        // 'completed' only means settled. Whether the call itself worked is
-        // result.success / result.reverted, so read those before claiming it.
-        const inner = parsed?.result ?? {};
-        const reverted = inner.reverted === true;
-        const succeeded =
-          status === 'success' ||
-          (status === 'completed' && inner.success !== false && !reverted);
-
-        return {
-          outcome: succeeded ? 'success' : reverted ? 'reverted' : 'failed',
-          txHash:
-            parsed?.transactionHash ??
-            inner.transactionHash ??
-            parsed?.tx_hash ??
-            parsed?.txHash,
-          gasUsed:
-            parsed?.gasUsedWei?.toString() ??
-            inner.gasUsed?.toString() ??
-            parsed?.gas_used?.toString(),
-          blockNumber: parsed?.block_number ?? parsed?.blockNumber,
-          error: parsed?.error ?? parsed?.failure_reason ?? inner.revertReason,
-          sponsored: inner.sponsored ?? parsed?.sponsored,
-          privateRoute: inner.privateRoute ?? parsed?.privateRoute,
-        };
+        return settlementFrom(parsed, status);
       }
 
       await new Promise((r) => setTimeout(r, delay));
@@ -351,10 +388,137 @@ export class KeeperHubExecutor {
   }
 }
 
-function safeJson(text: string): any {
+function parseJsonObject(text: string): JsonObject {
   try {
-    return JSON.parse(text);
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('expected a JSON object');
+    }
+    return parsed as JsonObject;
   } catch {
-    return { raw: text };
+    throw new McpError('KeeperHub tool returned non-JSON content', -32603, false);
   }
+}
+
+function newAuditRecord(context: AttemptContext): AuditEntry {
+  return {
+    executionKey: context.executionKey,
+    attempt: context.attempt,
+    timestamp: new Date().toISOString(),
+    trigger: context.trigger,
+    action: context.functionName,
+    params: { args: context.args, ...context.options },
+    route: { requested: context.routeDecision.route, confirmed: false },
+    outcome: 'failed',
+  };
+}
+
+function successfulResult(
+  executionKey: string,
+  attempt: number,
+  result: AttemptResult
+): ExecutionResult {
+  return {
+    success: true,
+    executionKey,
+    keeperhubExecutionId: result.executionId,
+    txHash: result.record.txHash,
+    gasUsed: result.record.gasUsed,
+    attempts: attempt,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function settlementFrom(parsed: JsonObject, status: string): Settlement {
+  const inner = objectValue(parsed.result);
+  const reverted = firstBoolean(inner, ['reverted']) === true;
+  const explicitSuccess =
+    status === 'success' ||
+    (status === 'completed' && firstBoolean(inner, ['success']) === true);
+
+  if (status === 'completed' && !reverted && !explicitSuccess) {
+    return {
+      outcome: 'failed',
+      error: 'completed settlement has no explicit success signal',
+    };
+  }
+
+  const txHash =
+    firstString(parsed, ['transactionHash', 'tx_hash', 'txHash']) ??
+    firstString(inner, ['transactionHash', 'tx_hash', 'txHash']);
+  if (explicitSuccess && !txHash) {
+    return {
+      outcome: 'failed',
+      error: 'KeeperHub settlement missing transaction hash',
+    };
+  }
+
+  return {
+    outcome: settlementOutcome(explicitSuccess, reverted),
+    txHash,
+    gasUsed:
+      firstScalarString(parsed, ['gasUsedWei', 'gas_used']) ??
+      firstScalarString(inner, ['gasUsed', 'gas_used']),
+    blockNumber: firstNumber(parsed, ['block_number', 'blockNumber']),
+    error:
+      firstString(parsed, ['error', 'failure_reason']) ??
+      firstString(inner, ['revertReason', 'error']),
+    sponsored:
+      firstBoolean(inner, ['sponsored']) ?? firstBoolean(parsed, ['sponsored']),
+    privateRoute:
+      firstBoolean(inner, ['privateRoute']) ??
+      firstBoolean(parsed, ['privateRoute']),
+  };
+}
+
+function settlementOutcome(success: boolean, reverted: boolean): Outcome {
+  if (success) return 'success';
+  if (reverted) return 'reverted';
+  return 'failed';
+}
+
+function objectValue(value: unknown): JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as JsonObject)
+    : {};
+}
+
+function firstString(object: JsonObject, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === 'string' && value) return value;
+  }
+  return undefined;
+}
+
+function firstBoolean(object: JsonObject, keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === 'boolean') return value;
+  }
+  return undefined;
+}
+
+function firstNumber(object: JsonObject, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function firstScalarString(
+  object: JsonObject,
+  keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = object[key];
+    if (typeof value === 'string' || typeof value === 'number') {
+      return String(value);
+    }
+  }
+  return undefined;
 }

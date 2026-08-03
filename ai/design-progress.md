@@ -1,33 +1,45 @@
 # Design Progress: LegacyKeeper
 
-Started: 2026-07-27
-Style Config: not found; prompt.md directions used as the visual source of truth
-Color Mode: per-proposal — dark-only for A, light-only for B, dark-only for C
-Flags: proposal gate only
+Started: 2026-08-03
+Style Config: `ai/style.config.md`
+Color Mode: dark-only — security tooling and KeeperHub identity
+Flags: proposal gate; production dashboard code locked until selection
 
 ## Phase 1: State Design
 
 Status: completed
-Output: ai/state-design.md
+Output: `ai/state-design.md`
 
 ## Phase 2: Creative (3 Proposals)
 
-Status: completed
-Proposals: proposals/codex-option-a.html, proposals/codex-option-b.html, proposals/codex-option-c.html
-DNA Codes: DNA-A-SECURITY-AMBER-ASYMMETRIC, DNA-B-CALM-WARM-CONTINUITY, DNA-C-FORENSIC-DENSE-TRACE
-Proposal Audit: approved — automated UI audit reports zero violations for all three
+Status: revised again after user requested simpler, standard production layouts
+Outputs: `proposals/option-a.html`, `proposals/option-b.html`, `proposals/option-c.html`
+DNA Codes:
+
+- `DNA-A-SIMPLE-OVERVIEW-SIDEBAR-STATUS`
+- `DNA-B-FOCUSED-CHECKIN-CENTERED-GUIDE`
+- `DNA-C-CLEAR-STATUS-TWOCOLUMN-DISCLOSURE`
+
+Validation: desktop and mobile browser renders inspected; preview controls are
+local simulations and never issue network requests.
 
 ## Phase 3: Selection
 
-Status: pending
-Selected: pending
+Status: completed by explicit user approval
+Hybrid preview: `proposals/hybrid-ca.html` — Option C content hierarchy with
+Option A dashboard navigation; DNA `DNA-CA-CLEAR-STATUS-SIDEBAR-HYBRID`
+Selected: Option C content hierarchy with Option A desktop navigation
 
 ## Phase 4: Production Polish
 
-Status: pending until a direction is selected
-Audit Result: pending
+Status: completed
+Audit Result: selected hybrid implemented with live state, signed KeeperHub
+heartbeat, five-stage verification, progressive evidence, and offline recovery-key
+evacuation handoff. Production build, TypeScript, route tests, and visual connect
+state passed. Final mechanical audit: 21 files scanned, zero violations.
 
 ## Phase 5: Final QA
 
-Status: pending
-QA Result: pending
+Status: completed for Phase 4
+QA Result: desktop browser render inspected; responsive rules, keyboard focus,
+reduced motion, 44px controls, correct mark, and honest loading/empty/error states retained.

@@ -17,6 +17,7 @@ import 'dotenv/config';
 import { JsonRpcProvider, Contract, Wallet, formatEther } from 'ethers';
 import { McpClient } from '../../agent/keeperhub/mcp-client';
 import { KeeperHubExecutor } from '../../agent/executor/keeperhub';
+import { OnchainExecutionVerifier } from '../../agent/executor/onchain-verifier';
 import { AuditLedger } from '../../agent/audit/ledger';
 
 const CHAIN_ID = 11155111;
@@ -45,7 +46,7 @@ async function main() {
   // the owner proves liveness, then goes silent.
   if (process.argv.includes('--reset-clock')) {
     const owner = new Wallet(req('DEPLOYER_PRIVATE_KEY'), provider);
-    const tx = await (keeper.connect(owner) as any).heartbeat();
+    const tx = await keeper.connect(owner).getFunction('heartbeat')();
     await tx.wait();
     console.log(`owner checked in — clock reset (${tx.hash})\n`);
   }
@@ -65,7 +66,13 @@ async function main() {
     apiKey: req('KEEPERHUB_API_KEY'),
   });
   const ledger = new AuditLedger();
-  const executor = new KeeperHubExecutor(mcp, ledger, CHAIN_ID, contractAddress);
+  const executor = new KeeperHubExecutor(
+    mcp,
+    ledger,
+    CHAIN_ID,
+    contractAddress,
+    new OnchainExecutionVerifier(req('SEPOLIA_RPC_URL'), contractAddress)
+  );
 
   const server = await mcp.connect();
   console.log(`\nconnected: ${server.name} v${server.version}`);

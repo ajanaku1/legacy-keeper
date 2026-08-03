@@ -1,104 +1,56 @@
 # KeeperHub coverage matrix
 
-Inventory of the live platform as probed on 2026-07-27, mapped to LegacyKeeper's
-product journey. Status is evidence-based: **Proven** means a real execution ID
-or artifact exists; **Available** means the surface exists and was inspected but
-we have not used it; **Blocked** means something outside our control stands in
-the way.
+Refreshed from authenticated aggregate MCP and repository evidence on
+2026-08-02. Status follows the evidence ladder in
+[`judging-baseline.md`](judging-baseline.md): **Discovered → Configured →
+Enabled → Triggered → Settled → Verified**.
 
-Probe method: MCP `tools/list` (35 tools), `list_action_schemas`
-(442 actions / 6 triggers / chain list), `search_workflows` (77 listings),
-`list_integrations`, and a real `call_workflow` 402 challenge.
+## Current platform inventory
 
----
+The aggregate MCP identified itself as KeeperHub `1.2.0` and returned 35 tools.
+The relevant live surfaces include workflow CRUD/validation/execution, direct
+contract execution and status, action schemas, integrations, workflow listing,
+protocol actions, templates, and paid workflow calls.
 
-## Platform vocabulary discovered
-
-| Category | Detail |
-|---|---|
-| Triggers (6) | `Manual`, `Schedule` (cron), `Webhook`, `Event` (contract events), `Block` (block intervals), `Transfer` (Tempo TIP-20 with memo) |
-| Actions | 442 across 34 categories |
-| Core non-DeFi actions | `web3/read-contract`, `web3/write-contract`, `web3/sign-typed-data` (EIP-712), `web3/check-allowance`, `web3/check-balance`, `web3/query-events`, `web3/assess-risk`, `Condition`, `HTTP Request`, `math/aggregate`, `telegram/send-message`, `discord/send-message`, `slack/send-message`, `sendgrid/send-email` |
-| Workflow schema | `workflowStructure` in `list_action_schemas` — react-flow style `nodes[]` + `edges[]`, `sourceHandle` only for Condition / For Each |
-| Chains | Sepolia (11155111) supported alongside Ethereum, Base, Solana, Tempo |
-| Marketplace | 77 listings; paid ones carry `priceUsdcPerCall` ($0.01–$0.05) |
-
----
-
-## Surface status
-
-| Surface | Product role in LegacyKeeper | Status | Evidence |
+| Surface | Product role | Status | Evidence / next requirement |
 |---|---|---|---|
-| **Aggregate MCP** | The agent's only path to submitting a transaction | **Proven** | Handshake + 35 tools; execution `tqba4l96rhclkuygrp8na` |
-| **Gas sponsorship** | Owner proves liveness without funding a wallet | **Proven** | `"sponsored": true`, `estimatedCostUsd: null` on tx `0xb4d16c35…` |
-| **Smart gas + retries** | Land unattended writes under drift | **Proven** | `gas_limit_multiplier` clamped at 0.3× and 0.02× — cannot underprice into a stuck tx (friction-log #05) |
-| **Native run logs** | Judge-verifiable evidence | **Proven** | `get_direct_execution_status` returns tx hash, gas, `sponsored`, `retryCount`, timestamps |
-| **Direct contract call** | Inheritance / evacuation / heartbeat execution | **Proven** | 5 Sepolia transactions |
-| **Agentic wallet + x402** | Pay for independent allowance verification | **Blocked — funding only** | Real 402 challenge captured; see below |
-| **MPP (Tempo)** | Same, over the Tempo rail | **Available** | `tempo` account exists in agentcash; `Transfer` trigger supports TIP-20 memo matching |
-| **Workflow builder / CRUD** | Versioned inheritance, heartbeat, panic graphs | **Available** | `create_workflow`, `validate_workflow`, `update_workflow`; schema now known |
-| **Schedule trigger** | Unattended liveness evaluation | **Available** | `scheduleCron` field confirmed |
-| **Webhook trigger** | Panic path from dashboard / bot | **Available** | Optional `webhookSchema` |
-| **Event trigger** | React to `GracePeriodEntered` / `PanicButtonPressed` | **Available** | Requires `network` + contract/event config |
-| **Block trigger** | Second scheduling failure domain for liveness | **Available** | Block-interval firing per chain |
-| **Conditions / notifications** | Branch on liveness; escalate to Telegram | **Available** | `Condition`, `telegram/send-message` |
-| **Per-workflow MCP** | Narrow typed tool for one production journey | **Not yet probed** | Requires an existing workflow first |
-| **CLI** | Export / reproduce workflow set for the starter | **Not yet probed** | — |
-| **Workflow listing / export** | Onboarding-bounty artifact | **Available** | `update_workflow_listing`, `get_workflow_listing` |
-| **Private routing** | Conceal evacuation until inclusion | **Unverified** | Our contract sets a flag; no evidence KeeperHub honoured a private path. Must not be claimed until proven |
+| Aggregate MCP | Only agent-controlled transaction path and workflow control plane | **Settled** | Direct execution IDs and successful Sepolia receipts; current handshake and 35-tool probe |
+| Direct contract execution | Inheritance, evacuation, and heartbeat writes | **Verified** | Five successful Sepolia receipts with LegacyKeeper events |
+| Gas sponsorship | Gasless owner heartbeat | **Settled** | KeeperHub record reports `sponsored: true`; tx `0x0041106b…` |
+| Smart gas | Avoid underpriced transactions | **Triggered** | Deliberate 0.3× and 0.02× hints were clamped; both landed |
+| Retry and idempotency | Recover an unattended execution | **Verified** | Three failed attempts followed by tx `0x3e8505e2…`; separate per-attempt keys |
+| Native run status / audit | Distinguish attempts and settlement | **Settled** | Execution IDs, status, gas, transaction hashes, and local append-only ledger |
+| Workflow CRUD, validation, export | Reproducible automation graphs | **Verified** | Five enabled workflow IDs, live validation, and definitions round-tripped from KeeperHub |
+| Schedule trigger | Unattended liveness evaluation | **Verified** | Automatic execution `6g847vp4ael4oneykst8f`; stable schedule dispatch key captured |
+| Panic Webhook trigger | Recovery-key evacuation handoff | **Enabled** | `pm22qhfnox30w0mnngw01`; deliberately not fired because it would evacuate the deployed vault |
+| Heartbeat Webhook trigger | Sponsored EIP-712 check-in relay | **Verified** | Automatic webhook execution `9ysdci63m7ritc73lendt`; sponsored tx `0x291b7924…f9c2c3` advanced onchain liveness |
+| Event trigger | Independent onchain heartbeat confirmation | **Verified** | Automatic execution `k6dj2mwo4twtkbu3il7ru` observed the webhook transaction and completed its Telegram action |
+| Block trigger | Redundant overdue health check | **Verified** | Automatic execution `lrb7i7nghxrxk139d5ty7`; guard read completed inheritance and correctly skipped the write path |
+| Conditions / reads / writes | Decide and execute inside workflows | **Verified** | Schedule/Block reads and guards ran automatically; webhook write settled with a confirmed receipt |
+| Telegram workflow notification | Inform owner or beneficiaries | **Verified** | Stored integration test passed; Event workflow completed the Telegram confirmation action |
+| Per-workflow MCP | Least-privilege client interface | **Verified** | Published `legacykeeper-status-sepolia`; its one typed tool executed successfully as `ao7ozazw7ydkkzastfdxt` |
+| CLI lifecycle | Operator recovery and inspection | **Verified** | Official CLI `0.13.1` source build listed enabled workflows and returned filtered status/native logs for the webhook run |
+| x402 | Buy an independent allowance/risk result | **Product-verified** | OneSource checked Sepolia USDC for the exact LegacyKeeper owner and spender; $0.003 Base tx `0x03376097…`; zero result consumed as an at-risk decision |
+| MPP | Alternative autonomous payment rail | **Discovered, blocked** | The same OneSource endpoint advertises MPP, but the AgentCash Tempo account balance is $0.00 |
+| Private routing | Conceal evacuation before inclusion | **Discovered** | No request parameter or returned route evidence found; onchain preference flag does not select a submission path |
 
----
+## Workflow state
 
-## x402 feasibility — GO, pending funding
+| Workflow | Trigger | ID | Configured | Enabled | Automatic run |
+|---|---|---|---:|---:|---:|
+| Liveness Monitor | Schedule | `n6h03seyd2178mvj0p9nm` | Yes | Yes | `6g847vp4ael4oneykst8f` / schedule dispatch |
+| Panic Evacuation | Webhook | `pm22qhfnox30w0mnngw01` | Yes | Yes | Not fired; destructive evacuation is outside this proof |
+| Heartbeat Relay | Webhook | `ryd34r3ayrg2u8o29fmrk` | Yes | Yes | `9ysdci63m7ritc73lendt` / `wrun_01KYZZR8GH2X2FACPB8C59DX7G` |
+| Heartbeat Event Watch | Event | `sux1hhjj0u6an7p6vddp2` | Yes | Yes | `k6dj2mwo4twtkbu3il7ru` |
+| Block Health Check | Block | `5w133r3gajq3haixv1nhl` | Yes | Yes | `lrb7i7nghxrxk139d5ty7` / block dispatch |
 
-A real challenge, captured without paying:
+## Claims deliberately withheld
 
-```json
-{"x402Version":2,"error":"Payment required",
- "accepts":[{"scheme":"exact","network":"eip155:8453",
-   "asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-   "amount":"10000","payTo":"0xc7d92e2089bfd22539553fa8ea061cb094274dc5",
-   "maxTimeoutSeconds":300}]}
-```
-
-`amount: 10000` atomic = **0.01 USDC on Base mainnet** — real money, trivially
-small. The MCP tool does not auto-pay; it names three settlement paths:
-
-1. `@keeperhub/wallet` — `paymentSigner.fetch(url, { paymentHint: 'x402' })`
-2. **`agentcash`** — already installed in this environment
-3. The marketplace UI, interactively
-
-agentcash wallet `0xf09EDa717EA8E77243e435Db9E4f517604194411` holds accounts on
-**base**, **tempo** and **solana**, all at **0.00**. Base covers x402; Tempo is
-the MPP rail, so one funded wallet plausibly serves both protocols.
-
-**Blocker:** funding only. ~$1 of USDC on Base covers ~100 calls at $0.01.
-
-### Chosen product role
-
-`approval-risk-rescan` ($0.01, category `security`, chain Sepolia) re-reads a
-live on-chain ERC-20 allowance. That is not decorative: `Goal.md`'s own product
-truth states *"LegacyKeeper protects ERC-20s only while its allowance remains
-valid."* The entire ERC-20 custody model rests on an allowance the owner could
-revoke, or a token could clear, without telling us. Paying a third party to
-independently verify that assumption is exactly the failure mode x402 should
-cover — and if it returns zero allowance, the estate silently cannot be
-distributed.
-
-Removing it would leave that assumption unchecked, which satisfies the
-"load-bearing, not decorative" test.
-
----
-
-## Honest gaps
-
-Most of the platform is **Available but unused**. Today the agent calls
-`execute_contract_call` directly rather than driving workflows, so the builder,
-all four automatic triggers, conditions, and native notifications are inspected
-but not load-bearing. That is the single largest distance between the current
-build and `Goal.md`.
-
-Private routing is the one surface we have actively claimed nowhere and proven
-nowhere. The dashboard was corrected to say "private routing requested — flag
-set onchain; submission path is chosen by KeeperHub" rather than asserting a
-private path was used.
+- The panic workflow is enabled but is not described as triggered: firing it
+  would perform the destructive evacuation it is designed to execute.
+- Private routing is not described as requested or used until a route parameter
+  is sent before submission and KeeperHub returns verifiable route evidence.
+- x402 is a settled, load-bearing LegacyKeeper allowance check. Its response is
+  address-bound before the result can affect the product decision.
+- MPP remains discovery evidence because its required Tempo payment account is
+  unfunded; no additional funding was authorized.

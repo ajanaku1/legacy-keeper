@@ -52,13 +52,17 @@
       }
     },
     {
-      "id": "overdue",
+      "id": "read-inheritance",
       "data": {
         "type": "action",
-        "label": "Overdue?",
+        "label": "Read Inheritance State",
         "config": {
-          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true",
-          "actionType": "Condition"
+          "abi": "[{\"name\":\"inheritanceExecuted\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[],\"outputs\":[{\"name\":\"\",\"type\":\"bool\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/read-contract",
+          "abiFunction": "inheritanceExecuted",
+          "functionArgs": "[]",
+          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
         },
         "status": "idle"
       },
@@ -69,20 +73,38 @@
       }
     },
     {
-      "id": "alert",
+      "id": "overdue",
       "data": {
         "type": "action",
-        "label": "Alert Missed Execution",
+        "label": "Overdue?",
         "config": {
-          "chatId": "000000000",
-          "message": "LegacyKeeper: distribution is due but has not executed. The scheduled monitor may be down.",
-          "actionType": "telegram/send-message"
+          "condition": "{{@read-status:Read Timeout Status.result.graceElapsed}} == true && {{@read-inheritance:Read Inheritance State.result}} == false",
+          "actionType": "Condition"
         },
         "status": "idle"
       },
       "type": "action",
       "position": {
         "x": 756,
+        "y": 0
+      }
+    },
+    {
+      "id": "alert",
+      "data": {
+        "type": "action",
+        "label": "Alert Missed Execution",
+        "config": {
+          "chatId": "835617357",
+          "message": "LegacyKeeper: distribution is due but has not executed. The scheduled monitor may be down.",
+          "actionType": "telegram/send-message",
+          "integrationId": "zjnwqnhvy2gyp7irddiuv"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1008,
         "y": 0
       }
     }
@@ -94,8 +116,13 @@
       "target": "read-status"
     },
     {
-      "id": "read-status->overdue",
+      "id": "read-status->read-inheritance",
       "source": "read-status",
+      "target": "read-inheritance"
+    },
+    {
+      "id": "read-inheritance->overdue",
+      "source": "read-inheritance",
       "target": "overdue"
     },
     {
@@ -106,21 +133,28 @@
     }
   ],
   "visibility": "private",
-  "enabled": false,
+  "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:11.818Z",
-  "updatedAt": "2026-07-27T23:12:11.818Z",
+  "updatedAt": "2026-08-02T00:24:02.817Z",
   "seededAt": null,
-  "isListed": false,
-  "listedSlug": null,
-  "listedAt": null,
-  "inputSchema": null,
-  "outputMapping": null,
+  "isListed": true,
+  "listedSlug": "legacykeeper-status-sepolia",
+  "listedAt": "2026-08-02T00:11:36.323Z",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "outputMapping": {
+    "graceElapsed": "{{@read-status:Read Timeout Status.result.graceElapsed}}",
+    "timeoutExceeded": "{{@read-status:Read Timeout Status.result.timeoutExceeded}}"
+  },
   "priceUsdcPerCall": null,
   "workflowType": "read",
-  "category": null,
-  "chain": null,
-  "listingVersion": 1,
+  "category": "monitoring",
+  "chain": "11155111",
+  "listingVersion": 5,
   "deletedAt": null,
   "deactivatedAt": null,
   "publicTags": [],

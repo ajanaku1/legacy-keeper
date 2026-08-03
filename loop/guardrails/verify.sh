@@ -4,7 +4,7 @@
 # Per CLAUDE.md this script has the final vote. Nothing is "done" because it
 # looks finished; it is done when the gate below prints PASS.
 #
-# Usage:  bash loop/guardrails/verify.sh [--quiet]
+# Usage:  bash loop/guardrails/verify.sh [phase-0|...|phase-5] [--quiet]
 # Exit:   0 = every gate passed, 1 = at least one gate failed.
 
 set -uo pipefail
@@ -30,7 +30,14 @@ case "$NODE_MAJOR" in
 esac
 
 QUIET=0
-[ "${1:-}" = "--quiet" ] && QUIET=1
+PHASE_FILTER=""
+for ARG in "$@"; do
+  case "$ARG" in
+    --quiet) QUIET=1 ;;
+    phase-[0-5]) PHASE_FILTER="$ARG" ;;
+    *) echo "unknown argument: $ARG"; exit 2 ;;
+  esac
+done
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -99,7 +106,7 @@ fi
 
 # ── G7 · Dashboard typechecks ─────────────────────────────────────────
 if [ ! -d dashboard/node_modules ]; then
-  pass "G7 dashboard typecheck (skipped — not installed)"
+  fail "G7 dashboard typecheck" "dashboard/node_modules missing"
 elif (cd dashboard && npx tsc --noEmit >/tmp/lk-dash-tsc.log 2>&1); then
   pass "G7 dashboard typecheck"
 else
@@ -206,17 +213,23 @@ fi
 
 # ── G10 · Every Goal.md predicate maps to a gate or a named artifact ──
 # prompt.md's definition of done requires this mapping to exist and hold.
-# Open items are counted and printed rather than hidden: a predicate we have
-# not met is information, not something to bury.
-EV=loop/guardrails/evidence.tsv
-if [ ! -f "$EV" ]; then
-  fail "G10 evidence map" "$EV missing"
-else
+# Phase runs prove their own subset below. The full run alone requires every
+# Goal.md predicate to have closed evidence; an `open` row is intentionally RED.
+if [ -z "$PHASE_FILTER" ]; then
+  EV=loop/guardrails/evidence.tsv
+  if [ ! -f "$EV" ]; then
+    fail "G10 evidence map" "$EV missing"
+  else
   MISSING=""
   OPEN_COUNT=0
   while IFS=$'\t' read -r predicate kind ref note; do
     case "$predicate" in ''|\#*) continue;; esac
     case "$kind" in
+      gate)
+        echo "$ref" | grep -qE '^G[0-9]+$' \
+          || MISSING="${MISSING}  ${predicate}: invalid gate reference $ref
+"
+        ;;
       file)
         [ -s "$ref" ] || MISSING="${MISSING}  ${predicate}: missing or empty $ref
 "
@@ -227,18 +240,115 @@ else
           || MISSING="${MISSING}  ${predicate}: not a valid tx hash
 "
         ;;
+      exec)
+        echo "$ref" | grep -qE '^[a-zA-Z0-9_-]{12,}$' \
+          || MISSING="${MISSING}  ${predicate}: invalid KeeperHub execution id
+"
+        ;;
       open)
         OPEN_COUNT=$((OPEN_COUNT+1))
+        ;;
+      *)
+        MISSING="${MISSING}  ${predicate}: unknown evidence kind $kind
+"
         ;;
     esac
   done < "$EV"
 
   TOTAL=$(grep -vcE '^\s*#|^\s*$' "$EV")
-  if [ -z "$MISSING" ]; then
-    pass "G10 evidence map ($((TOTAL-OPEN_COUNT))/$TOTAL proven, $OPEN_COUNT open)"
+  if [ -z "$MISSING" ] && [ "$OPEN_COUNT" -eq 0 ]; then
+    pass "G10 evidence map ($TOTAL/$TOTAL proven)"
   else
-    fail "G10 evidence map" "$(printf '%s' "$MISSING" | head -5)"
+    fail "G10 evidence map" "$(printf '%s' "${MISSING}${OPEN_COUNT} predicate(s) still open" | head -5)"
   fi
+  fi
+fi
+
+# ── Phase completion predicates ───────────────────────────────────────
+# These start RED. They assert judge-visible artifacts and behavior that the
+# current prototype does not yet provide. Never weaken them to fit the build.
+phase_wanted() {
+  [ -z "$PHASE_FILTER" ] || [ "$PHASE_FILTER" = "$1" ]
+}
+
+phase_assert() {
+  local phase="$1" description="$2" command="$3"
+  phase_wanted "$phase" || return 0
+  if bash -c "$command" >/tmp/lk-${phase}.log 2>&1; then
+    pass "$phase $description"
+  else
+    fail "$phase $description" "see /tmp/lk-${phase}.log"
+  fi
+}
+
+phase_assert phase-0 "84/100 truth baseline and evidence taxonomy" '
+  test -s reports/judging-baseline.md &&
+  grep -q "84/100" reports/judging-baseline.md &&
+  for status in discovered configured enabled triggered settled verified; do
+    grep -qi "$status" reports/judging-baseline.md || exit 1
+  done &&
+  grep -qi "all five are disabled" reports/judging-baseline.md &&
+  grep -q "unknown evidence kind" loop/guardrails/verify.sh
+'
+
+phase_assert phase-1 "fail-closed executor regression suite" '
+  test -s test/agent/executor-integrity.test.ts &&
+  grep -qi "missing.*execution" test/agent/executor-integrity.test.ts &&
+  grep -qi "receipt" test/agent/executor-integrity.test.ts &&
+  grep -qi "resulting state\|product state" test/agent/executor-integrity.test.ts &&
+  grep -qi "429\|500\|5xx" test/agent/executor-integrity.test.ts &&
+  ! grep -q "{ outcome: .success., txHash: parsed" agent/executor/keeperhub.ts &&
+  grep -q "response.ok" agent/keeperhub/mcp-client.ts &&
+  ! grep -RniE "(: any\\b|<any>|as any\\b|any\\[\\])" agent bot dashboard/app dashboard/components dashboard/lib workflows scripts --include="*.ts" --include="*.tsx"
+'
+
+phase_assert phase-2 "enabled automatic KeeperHub workflow evidence" '
+  test -s reports/live-workflow-evidence.json &&
+  jq -e '\''
+    ([.workflows[] | select(.enabled == true and (.runId | type == "string") and (.runId | length > 0)) | .trigger] | unique) as $t |
+    ($t | index("Schedule")) != null and
+    ($t | index("Webhook")) != null and
+    ($t | index("Event")) != null and
+    ($t | index("Block")) != null and
+    any(.workflows[]; (.txHash // "") | test("^0x[0-9a-fA-F]{64}$"))
+  '\'' reports/live-workflow-evidence.json >/dev/null
+'
+
+phase_assert phase-3 "autonomous paid-rail evidence" '
+  test -s reports/paid-rail-evidence.json &&
+  jq -e '\''
+    .x402.challenge == true and
+    .x402.policyApproved == true and
+    (.x402.paymentTx | test("^0x[0-9a-fA-F]{64}$")) and
+    .x402.retried == true and
+    .x402.resultConsumed == true and
+    ((.mpp.demonstrated == true) or ((.mpp.blocker // "") | length > 0))
+  '\'' reports/paid-rail-evidence.json >/dev/null
+'
+
+phase_assert phase-4 "every product check-in routes through KeeperHub" '
+  test -s dashboard/app/api/heartbeat/route.ts &&
+  grep -Rqi "signTypedData" dashboard/app dashboard/components dashboard/lib &&
+  grep -q "KEEPERHUB_API_KEY" dashboard/app/api/heartbeat/route.ts &&
+  grep -qi "execute_workflow\|heartbeat-relay" dashboard/app/api/heartbeat/route.ts &&
+  grep -qi "verifyTypedData\|recoverTypedDataAddress" dashboard/app/api/heartbeat/route.ts &&
+  ! grep -R "functionName: .heartbeat." dashboard bot --include="*.ts" --include="*.tsx" &&
+  test -s dashboard/test/heartbeat-route.test.ts
+'
+
+phase_assert phase-5 "judge-runnable onboarding and submission assets" '
+  test -s starter/setup.sh &&
+  ! grep -q "OWNER_PRIVATE_KEY\|RECOVERY_PUBLIC_KEY\|templates/inheritance-workflow\|npm run deploy:contract" starter/setup.sh &&
+  test -s dashboard/public/legacykeeper-screenshot.png &&
+  ! grep -q "TODO: Add screenshot" README.md &&
+  grep -qiE "demo video.*https?://|https?://(www\\.)?(youtube|youtu\\.be|loom|vimeo)" README.md
+'
+
+if [ -z "$PHASE_FILTER" ] || [ "$PHASE_FILTER" = "phase-4" ] || [ "$PHASE_FILTER" = "phase-5" ]; then
+  echo "manual checks:"
+  echo "  - selected mark remains legible at 16px"
+  echo "  - selected dashboard proposal is implemented faithfully"
+  echo "  - demo pacing and claims are judge-clear"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────

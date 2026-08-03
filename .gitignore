@@ -1,6 +1,11 @@
 node_modules/
 dist/
 build/
+.next/
+.vercel/
+.Codex/
+*.tsbuildinfo
+video/out/still-*.png
 
 # hardhat
 artifacts/
@@ -29,7 +34,7 @@ keeperhub-credentials.json
 *.key
 *.pem
 
-# build-prompt scaffolding (local only)
+# Local build files
 Goal.md
 prompt.md
 plan.md

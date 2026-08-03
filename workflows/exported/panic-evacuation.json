@@ -56,9 +56,10 @@
         "type": "action",
         "label": "Confirm Evacuation",
         "config": {
-          "chatId": "000000000",
+          "chatId": "835617357",
           "message": "LegacyKeeper: EVACUATION EXECUTED. tx {{@evacuate:Evacuate To Vault.transactionHash}}",
-          "actionType": "telegram/send-message"
+          "actionType": "telegram/send-message",
+          "integrationId": "zjnwqnhvy2gyp7irddiuv"
         },
         "status": "idle"
       },
@@ -82,10 +83,10 @@
     }
   ],
   "visibility": "private",
-  "enabled": false,
+  "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:09.239Z",
-  "updatedAt": "2026-07-27T23:12:09.239Z",
+  "updatedAt": "2026-08-02T00:24:00.970Z",
   "seededAt": null,
   "isListed": false,
   "listedSlug": null,
@@ -93,7 +94,7 @@
   "inputSchema": null,
   "outputMapping": null,
   "priceUsdcPerCall": null,
-  "workflowType": "read",
+  "workflowType": "write",
   "category": null,
   "chain": null,
   "listingVersion": 1,

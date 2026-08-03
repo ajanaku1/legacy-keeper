@@ -21,6 +21,16 @@ export const metadata: Metadata = {
   title: 'LegacyKeeper — Continuity Plan',
   description:
     'Autonomous onchain inheritance and emergency evacuation, executed through KeeperHub.',
+  icons: {
+    icon: [
+      {
+        url: '/legacykeeper-mark.svg?v=split-shield-20260803',
+        type: 'image/svg+xml',
+      },
+    ],
+    shortcut: '/legacykeeper-mark.svg?v=split-shield-20260803',
+    apple: '/legacykeeper-mark.png?v=split-shield-20260803',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
