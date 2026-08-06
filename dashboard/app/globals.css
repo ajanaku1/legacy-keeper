@@ -669,6 +669,10 @@ h2 {
   overflow: hidden;
 }
 
+.dashboard-readiness {
+  margin-top: var(--space-4);
+}
+
 .ledger-head,
 .card-head {
   min-height: 60px;

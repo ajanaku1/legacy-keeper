@@ -55,7 +55,10 @@ function PlanReadiness({
 }) {
   const resolved = resolution.status === 'resolved';
   return (
-    <section className="ledger-card" aria-labelledby="readiness-title">
+    <section
+      className="ledger-card dashboard-readiness"
+      aria-labelledby="readiness-title"
+    >
       <header className="ledger-head">
         <h2 id="readiness-title">Plan readiness</h2>
         <span>
