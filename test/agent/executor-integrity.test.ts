@@ -51,19 +51,9 @@ type ExecutorConstructor = new (
   verifier: TestVerifier
 ) => KeeperHubExecutor;
 
-function executorWithVerifier(
-  mcp: McpClient,
-  ledger: AuditLedger,
-  verifier: TestVerifier
-): KeeperHubExecutor {
+function executorWithVerifier(mcp: McpClient, ledger: AuditLedger, verifier: TestVerifier): KeeperHubExecutor {
   const Constructor = KeeperHubExecutor as unknown as ExecutorConstructor;
-  return new Constructor(
-    mcp,
-    ledger,
-    11155111,
-    '0x0000000000000000000000000000000000000001',
-    verifier
-  );
+  return new Constructor(mcp, ledger, 11155111, '0x0000000000000000000000000000000000000001', verifier);
 }
 
 const verified: TestVerifier = {
@@ -80,9 +70,7 @@ describe('Executor integrity — acceptance is not success', () => {
     const mcp = client(fake.url);
     await mcp.connect();
 
-    await expect(mcp.callTool('execute_contract_call', {})).resolves.toContain(
-      'exec-fake-1'
-    );
+    await expect(mcp.callTool('execute_contract_call', {})).resolves.toContain('exec-fake-1');
     expect(fake.transportRequests()).toBe(2);
   });
 
@@ -94,45 +82,107 @@ describe('Executor integrity — acceptance is not success', () => {
     const mcp = client(fake.url);
     await mcp.connect();
 
-    await expect(mcp.callTool('execute_contract_call', {})).resolves.toContain(
+    await expect(mcp.callTool('execute_contract_call', {})).resolves.toContain('exec-fake-1');
+    expect(fake.transportRequests()).toBe(2);
+  });
+
+  it('retries HTTP 409 in-progress responses with the same idempotency key', async () => {
+    fake = await startFakeKeeperHub({
+      transportFailTimes: 1,
+      transportStatus: 409,
+      transportBody: JSON.stringify({
+        code: 'idempotency_in_progress',
+        retryable: true,
+      }),
+    });
+    const mcp = client(fake.url);
+    await mcp.connect();
+
+    await expect(mcp.callTool('execute_contract_call', { idempotency_key: 'logical-a1' })).resolves.toContain(
       'exec-fake-1'
     );
-    expect(fake.transportRequests()).toBe(2);
+    expect(fake.idempotencyKeys).toEqual(['logical-a1', 'logical-a1']);
+  });
+
+  it('does not retry HTTP 409 idempotency conflicts', async () => {
+    fake = await startFakeKeeperHub({
+      transportFailTimes: 1,
+      transportStatus: 409,
+      transportBody: JSON.stringify({
+        code: 'idempotency_conflict',
+        retryable: false,
+      }),
+    });
+    const mcp = client(fake.url);
+    await mcp.connect();
+
+    await expect(
+      mcp.callTool('execute_contract_call', {
+        idempotency_key: 'logical-a1',
+      })
+    ).rejects.toMatchObject({ code: 409, retryKey: 'none' });
+    expect(fake.idempotencyKeys).toEqual(['logical-a1']);
+  });
+
+  it('reuses its idempotency key when the transport outcome remains unknown', async () => {
+    fake = await startFakeKeeperHub({ transportFailTimes: 5 });
+    const mcp = client(fake.url);
+    await mcp.connect();
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
+
+    const result = await executor.executeInheritance(
+      { type: 'manual', source: 'integrity-test' },
+      { maxAttempts: 2, retryBaseDelayMs: 1 }
+    );
+
+    expect(result.success).toBe(true);
+    expect(new Set(fake.idempotencyKeys).size).toBe(1);
+  });
+
+  it('reuses its idempotency key while KeeperHub reports the request in progress', async () => {
+    fake = await startFakeKeeperHub({
+      toolErrorTimes: 1,
+      toolErrorText: JSON.stringify({
+        code: 'idempotency_in_progress',
+        retryable: true,
+        message: 'Retry with the same idempotency key.',
+      }),
+    });
+    const mcp = client(fake.url);
+    await mcp.connect();
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
+
+    const result = await executor.executeInheritance(
+      { type: 'manual', source: 'integrity-test' },
+      { maxAttempts: 2, retryBaseDelayMs: 1 }
+    );
+
+    expect(result.success).toBe(true);
+    expect(fake.idempotencyKeys).toHaveLength(2);
+    expect(new Set(fake.idempotencyKeys).size).toBe(1);
   });
 
   it('rejects malformed inner tool JSON instead of treating it as acceptance', async () => {
     fake = await startFakeKeeperHub({ submissionText: '{not-json' });
     const mcp = client(fake.url);
     await mcp.connect();
-    const executor = executorWithVerifier(
-      mcp,
-      new AuditLedger(ledgerPath()),
-      verified
-    );
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
 
-    const result = await executor.executeInheritance(
-      { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
-    );
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 1 });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/non-JSON|malformed|parse/i);
   });
 
   it('fails closed when KeeperHub accepts a request without an execution id', async () => {
-    fake = await startFakeKeeperHub({ submissionResult: { status: 'completed' } });
+    fake = await startFakeKeeperHub({
+      submissionResult: { status: 'completed' },
+    });
     const mcp = client(fake.url);
     await mcp.connect();
-    const executor = executorWithVerifier(
-      mcp,
-      new AuditLedger(ledgerPath()),
-      verified
-    );
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
 
-    const result = await executor.executeInheritance(
-      { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
-    );
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 1 });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/missing.*execution/i);
@@ -145,19 +195,17 @@ describe('Executor integrity — acceptance is not success', () => {
     });
     const mcp = client(fake.url);
     await mcp.connect();
-    const executor = executorWithVerifier(
-      mcp,
-      new AuditLedger(ledgerPath()),
-      verified
-    );
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
 
     const result = await executor.executeInheritance(
       { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
+      { maxAttempts: 2, retryBaseDelayMs: 1 }
     );
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/transaction hash/i);
+    expect(result.attempts).toBe(1);
+    expect(fake.idempotencyKeys).toHaveLength(1);
   });
 
   it('fails closed when completed settlement has no explicit success signal', async () => {
@@ -166,35 +214,55 @@ describe('Executor integrity — acceptance is not success', () => {
     });
     const mcp = client(fake.url);
     await mcp.connect();
-    const executor = executorWithVerifier(
-      mcp,
-      new AuditLedger(ledgerPath()),
-      verified
-    );
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
 
     const result = await executor.executeInheritance(
       { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
+      { maxAttempts: 2, retryBaseDelayMs: 1 }
     );
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/explicit success/i);
+    expect(result.attempts).toBe(1);
+    expect(fake.idempotencyKeys).toHaveLength(1);
   });
 
-  it('reports the number of attempts actually made after a non-retryable rejection', async () => {
-    fake = await startFakeKeeperHub({ submissionResult: { status: 'completed' } });
+  it('does not resubmit after a successful settlement when verification throws', async () => {
+    fake = await startFakeKeeperHub({
+      executionStatus: {
+        status: 'completed',
+        result: { success: true },
+        transactionHash: TX_HASH,
+      },
+    });
     const mcp = client(fake.url);
     await mcp.connect();
-    const executor = executorWithVerifier(
-      mcp,
-      new AuditLedger(ledgerPath()),
-      verified
-    );
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), {
+      verify: async () => {
+        throw new Error('receipt provider unavailable');
+      },
+    });
 
     const result = await executor.executeInheritance(
       { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 3 }
+      { maxAttempts: 2, retryBaseDelayMs: 1 }
     );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/provider unavailable/i);
+    expect(result.attempts).toBe(1);
+    expect(fake.idempotencyKeys).toHaveLength(1);
+  });
+
+  it('reports the number of attempts actually made after a non-retryable rejection', async () => {
+    fake = await startFakeKeeperHub({
+      submissionResult: { status: 'completed' },
+    });
+    const mcp = client(fake.url);
+    await mcp.connect();
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
+
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 3 });
 
     expect(result.success).toBe(false);
     expect(result.attempts).toBe(1);
@@ -218,10 +286,7 @@ describe('Executor integrity — acceptance is not success', () => {
       }),
     });
 
-    const result = await executor.executeInheritance(
-      { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
-    );
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 1 });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/receipt/i);
@@ -244,10 +309,7 @@ describe('Executor integrity — acceptance is not success', () => {
       }),
     });
 
-    const result = await executor.executeInheritance(
-      { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
-    );
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 1 });
 
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/resulting state/i);
@@ -278,15 +340,10 @@ describe('Executor integrity — acceptance is not success', () => {
       },
     });
 
-    const result = await executor.executeInheritance(
-      { type: 'manual', source: 'integrity-test' },
-      { maxAttempts: 1 }
-    );
+    const result = await executor.executeInheritance({ type: 'manual', source: 'integrity-test' }, { maxAttempts: 1 });
 
     expect(result.success).toBe(true);
-    expect(requests).toEqual([
-      { action: 'executeInheritance', args: [], txHash: TX_HASH },
-    ]);
+    expect(requests).toEqual([{ action: 'executeInheritance', args: [], txHash: TX_HASH }]);
     expect(ledger.all()[0].verification).toMatchObject({
       receipt: true,
       event: 'InheritanceExecuted',
@@ -319,9 +376,7 @@ describe('Executor integrity — acceptance is not success', () => {
       { maxAttempts: 1 }
     );
 
-    const submitted = fake.calls.find(
-      (call) => call.name === 'execute_contract_call'
-    );
+    const submitted = fake.calls.find((call) => call.name === 'execute_contract_call');
     expect(submitted?.args).not.toHaveProperty('private');
     expect(ledger.all()[0].route?.requested).toBe('default');
   });

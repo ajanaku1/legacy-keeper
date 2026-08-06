@@ -1,3 +1,11 @@
+import type { Address } from 'viem';
+import { ActionError, withActionEvidence } from './action-error';
+import {
+  assertSepolia,
+  assertSettlement,
+  assertSigningDeadline,
+  sameAddress,
+} from './action-validation';
 import {
   parseHeartbeatRequest,
   type HeartbeatRequest,
@@ -6,13 +14,14 @@ import {
 } from './heartbeat-route';
 
 interface RecoveryState {
-  recoveryKey: string;
+  recoveryKey: Address;
   registered: boolean;
   evacuated: boolean;
 }
 
 interface EvacuationVerification {
   receiptStatus: string;
+  target?: Address;
   event?: string;
   evacuated: boolean;
 }
@@ -20,21 +29,32 @@ interface EvacuationVerification {
 export interface VerifiedEvacuationEvidence {
   stage: 'verified';
   executionId: string;
+  idempotencyKey: string;
   txHash: `0x${string}`;
   sponsored: true;
   receiptStatus: 'success';
   event: 'EvacuationTriggered';
+  plan: Address;
   evacuated: true;
   routeConfidence: 'unavailable';
 }
 
 export interface EvacuationDependencies {
   nowSeconds: () => number;
-  readRecoveryState: () => Promise<RecoveryState>;
-  recoverSigner: (request: HeartbeatRequest) => Promise<string>;
-  submitToKeeperHub: (request: HeartbeatRequest) => Promise<KeeperHubSubmission>;
+  readRegisteredPlan: (owner: Address) => Promise<Address>;
+  readOwner: (plan: Address) => Promise<Address>;
+  readRecoveryState: (plan: Address) => Promise<RecoveryState>;
+  recoverSigner: (request: HeartbeatRequest) => Promise<Address>;
+  nextIdempotencyKey: () => string;
+  submitToKeeperHub: (
+    request: HeartbeatRequest,
+    idempotencyKey: string
+  ) => Promise<KeeperHubSubmission>;
   awaitSettlement: (executionId: string) => Promise<KeeperHubSettlement>;
-  verifyOnchain: (txHash: `0x${string}`) => Promise<EvacuationVerification>;
+  verifyOnchain: (
+    plan: Address,
+    txHash: `0x${string}`
+  ) => Promise<EvacuationVerification>;
 }
 
 export async function executeSignedEvacuation(
@@ -42,42 +62,65 @@ export async function executeSignedEvacuation(
   deps: EvacuationDependencies
 ): Promise<VerifiedEvacuationEvidence> {
   const request = parseHeartbeatRequest(rawRequest);
-  assertDeadline(request.deadline, deps.nowSeconds());
-  const recovery = await deps.readRecoveryState();
-  if (!recovery.registered) throw new Error('No recovery key is registered');
-  if (recovery.evacuated) throw new Error('Evacuation has already executed');
+  assertSepolia(request.chainId);
+  assertSigningDeadline(request.deadline, deps.nowSeconds());
+  const registeredPlan = await deps.readRegisteredPlan(request.owner);
+  if (!sameAddress(registeredPlan, request.plan)) {
+    throw new ActionError('PLAN_MISMATCH', 'Factory registry does not match this plan.');
+  }
+  const planOwner = await deps.readOwner(request.plan);
+  if (!sameAddress(planOwner, request.owner)) {
+    throw new ActionError('WRONG_OWNER', 'The connected wallet does not own this plan.');
+  }
+  const recovery = await deps.readRecoveryState(request.plan);
+  if (!recovery.registered) {
+    throw new ActionError('INVALID_REQUEST', 'No recovery key is registered.');
+  }
+  if (recovery.evacuated) {
+    throw new ActionError('INVALID_REQUEST', 'Evacuation has already executed.');
+  }
   const signer = await deps.recoverSigner(request);
-  if (signer.toLowerCase() !== recovery.recoveryKey.toLowerCase()) {
-    throw new Error('Signature does not match the registered recovery key');
+  if (!sameAddress(signer, recovery.recoveryKey)) {
+    throw new ActionError('WRONG_SIGNER', 'Signature does not match the recovery key.');
   }
-  const submission = await deps.submitToKeeperHub(request);
-  const settlement = await deps.awaitSettlement(submission.executionId);
-  assertSettlement(settlement);
-  const proof = await deps.verifyOnchain(settlement.txHash as `0x${string}`);
-  if (proof.receiptStatus !== 'success' || proof.event !== 'EvacuationTriggered' || !proof.evacuated) {
-    throw new Error('Onchain proof does not confirm evacuation');
+  const idempotencyKey = deps.nextIdempotencyKey();
+  const submission = await deps.submitToKeeperHub(request, idempotencyKey);
+  if (!submission.executionId) {
+    throw new ActionError('KEEPERHUB_REJECTED', 'KeeperHub returned no execution ID.');
   }
+  const executionEvidence = { executionId: submission.executionId };
+  const settlement = await withActionEvidence(executionEvidence, async () => {
+    const result = await deps.awaitSettlement(submission.executionId);
+    assertSettlement(result);
+    return result;
+  });
+  await withActionEvidence(
+    { ...executionEvidence, txHash: settlement.txHash },
+    async () => {
+      const proof = await deps.verifyOnchain(request.plan, settlement.txHash);
+      if (
+        proof.receiptStatus !== 'success' ||
+        !sameAddress(proof.target, request.plan) ||
+        proof.event !== 'EvacuationTriggered' ||
+        !proof.evacuated
+      ) {
+        throw new ActionError(
+          'UNVERIFIED_RESULT',
+          'Receipt, evacuation event, target, and resulting state did not agree.'
+        );
+      }
+    }
+  );
   return {
     stage: 'verified',
     executionId: submission.executionId,
-    txHash: settlement.txHash as `0x${string}`,
+    idempotencyKey,
+    txHash: settlement.txHash,
     sponsored: true,
     receiptStatus: 'success',
     event: 'EvacuationTriggered',
+    plan: request.plan,
     evacuated: true,
     routeConfidence: 'unavailable',
   };
-}
-
-function assertDeadline(value: string, now: number): void {
-  const deadline = Number(value);
-  if (!Number.isSafeInteger(deadline) || deadline <= now || deadline > now + 600) {
-    throw new Error('Evacuation deadline must be short-lived and in the future');
-  }
-}
-
-function assertSettlement(value: KeeperHubSettlement): void {
-  if (value.status !== 'success') throw new Error(`KeeperHub evacuation failed: ${value.status}`);
-  if (!value.txHash) throw new Error('KeeperHub returned no evacuation transaction hash');
-  if (value.sponsored !== true) throw new Error('KeeperHub did not confirm sponsorship');
 }

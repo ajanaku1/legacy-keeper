@@ -1,0 +1,81 @@
+{
+  "id": "nraq3v7485euzqd6uf148",
+  "name": "LegacyKeeper — Plan Creation",
+  "description": "Creates one owner-signed wallet plan through the deployed factory.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "Plan Creation Webhook",
+        "config": {
+          "triggerType": "Webhook",
+          "webhookSchema": "{\"type\":\"object\",\"required\":[\"functionArgs\"],\"properties\":{\"functionArgs\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "create-plan",
+      "data": {
+        "type": "action",
+        "label": "Create Owner Plan",
+        "config": {
+          "abi": "[{\"name\":\"createPlan\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"},{\"name\":\"config\",\"type\":\"tuple\",\"components\":[{\"name\":\"heartbeatInterval\",\"type\":\"uint64\"},{\"name\":\"timeoutDuration\",\"type\":\"uint64\"},{\"name\":\"gracePeriod\",\"type\":\"uint64\"},{\"name\":\"beneficiaryWallets\",\"type\":\"address[]\"},{\"name\":\"beneficiaryShares\",\"type\":\"uint16[]\"},{\"name\":\"recoveryKey\",\"type\":\"address\"},{\"name\":\"safeVault\",\"type\":\"address\"},{\"name\":\"trackedTokens\",\"type\":\"address[]\"},{\"name\":\"allowSharedRecovery\",\"type\":\"bool\"}]},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[{\"name\":\"planAddress\",\"type\":\"address\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "createPlan",
+          "functionArgs": "{{@trigger-1:Plan Creation Webhook.functionArgs}}",
+          "contractAddress": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->create-plan",
+      "source": "trigger-1",
+      "target": "create-plan"
+    }
+  ],
+  "visibility": "private",
+  "enabled": true,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-08-04T20:04:05.224Z",
+  "updatedAt": "2026-08-06T10:30:47.145Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "write",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

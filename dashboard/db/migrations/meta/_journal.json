@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786009251585,
+      "tag": "0001_telegram_identity",
+      "breakpoints": false
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786020000000,
+      "tag": "0002_activity_ledger",
+      "breakpoints": false
+    }
+  ]
+}

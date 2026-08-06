@@ -25,13 +25,16 @@ const SUPPLY = ethers.parseUnits('1000', 18);
 async function setup() {
   const [owner, keeperBot, recovery, vault, b1, b2, attacker] =
     await ethers.getSigners();
-  const keeper: any = await ethers.deployContract('LegacyKeeper');
+  const keeper: any = await ethers.deployContract('LegacyKeeper', [
+    owner.address,
+  ]);
   await keeper.waitForDeployment();
   return { keeper, owner, keeperBot, recovery, vault, b1, b2, attacker };
 }
 
 async function signAction(
-  signer: any, keeper: any,
+  signer: any,
+  keeper: any,
   primaryType: 'Evacuate' | 'RotateRecoveryKey' | 'SetSafeVault',
   fields: Record<string, unknown>,
   types: { name: string; type: string }[]
@@ -58,9 +61,7 @@ describe('LegacyKeeper — security review', () => {
 
       // The attacker holds the owner key. If they can simply overwrite the
       // recovery key with their own, the entire emergency path is theatre.
-      await expect(
-        keeper.registerRecoveryKey(attacker.address)
-      ).to.be.reverted;
+      await expect(keeper.registerRecoveryKey(attacker.address)).to.be.reverted;
     });
 
     it('cannot re-point the safe vault once a recovery key is registered', async () => {
@@ -79,11 +80,15 @@ describe('LegacyKeeper — security review', () => {
 
       const dl = await deadline();
       const sig = await signAction(
-        recovery, keeper, 'RotateRecoveryKey',
+        recovery,
+        keeper,
+        'RotateRecoveryKey',
         { newKey: b1.address, nonce: 101, deadline: dl },
-        [{ name: 'newKey', type: 'address' },
-         { name: 'nonce', type: 'uint256' },
-         { name: 'deadline', type: 'uint256' }]
+        [
+          { name: 'newKey', type: 'address' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ]
       );
 
       await expect(keeper.rotateRecoveryKey(b1.address, 101, dl, sig)).to.not.be
@@ -115,7 +120,9 @@ describe('LegacyKeeper — security review', () => {
   describe('S3 · malformed ERC-20 return data', () => {
     it('treats a 4-byte return as failure rather than reverting the batch', async () => {
       const { keeper, owner, keeperBot, b1 } = await setup();
-      const token: any = await ethers.deployContract('MockMalformedToken', [SUPPLY]);
+      const token: any = await ethers.deployContract('MockMalformedToken', [
+        SUPPLY,
+      ]);
       await token.waitForDeployment();
 
       await keeper.addBeneficiary(b1.address, 10000);
@@ -126,7 +133,9 @@ describe('LegacyKeeper — security review', () => {
       // abi.decode(4 bytes, (bool)) reverts. A weird token must not be able to
       // take the whole distribution with it.
       await expect(
-        keeper.connect(keeperBot).executeInheritanceERC20(await token.getAddress())
+        keeper
+          .connect(keeperBot)
+          .executeInheritanceERC20(await token.getAddress())
       ).to.not.be.reverted;
     });
   });
@@ -135,7 +144,8 @@ describe('LegacyKeeper — security review', () => {
     it('pays everyone else and records the blocked share as claimable', async () => {
       const { keeper, owner, keeperBot, b1, b2 } = await setup();
       const token: any = await ethers.deployContract('MockBlacklistToken', [
-        SUPPLY, b1.address,
+        SUPPLY,
+        b1.address,
       ]);
       await token.waitForDeployment();
 
@@ -145,11 +155,18 @@ describe('LegacyKeeper — security review', () => {
       await token.approve(await keeper.getAddress(), SUPPLY);
       await time.increase(TIMEOUT + GRACE + 1);
 
-      await keeper.connect(keeperBot).executeInheritanceERC20(await token.getAddress());
+      await keeper
+        .connect(keeperBot)
+        .executeInheritanceERC20(await token.getAddress());
 
-      expect(await token.balanceOf(b2.address)).to.equal((SUPPLY * 6000n) / 10000n);
+      expect(await token.balanceOf(b2.address)).to.equal(
+        (SUPPLY * 6000n) / 10000n
+      );
       expect(
-        await keeper.pendingTokenWithdrawal(await token.getAddress(), b1.address)
+        await keeper.pendingTokenWithdrawal(
+          await token.getAddress(),
+          b1.address
+        )
       ).to.equal((SUPPLY * 4000n) / 10000n);
     });
   });

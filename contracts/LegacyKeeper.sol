@@ -63,6 +63,9 @@ contract LegacyKeeper {
 
     uint16 public constant TOTAL_BPS = 10000;
 
+    /// @dev A liveness proof cannot be spammed more than once per day.
+    uint256 private constant HEARTBEAT_COOLDOWN = 1 days;
+
     /// @dev Gas forwarded to a beneficiary on push. Enough for a plain
     ///      receive(), too little to reenter, and caps griefing cost.
     uint256 private constant PUSH_GAS = 30000;
@@ -73,7 +76,7 @@ contract LegacyKeeper {
 
     /// @dev Bounds the distribution loop so an estate cannot be configured
     ///      into a state where executing it exceeds the block gas limit.
-    uint256 public constant MAX_BENEFICIARIES = 20;
+    uint256 public constant MAX_BENEFICIARIES = 10;
 
     bytes32 private constant EIP712_DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -87,6 +90,16 @@ contract LegacyKeeper {
         keccak256("RotateRecoveryKey(address newKey,uint256 nonce,uint256 deadline)");
     bytes32 private constant SET_VAULT_TYPEHASH =
         keccak256("SetSafeVault(address newVault,uint256 nonce,uint256 deadline)");
+    bytes32 private constant SET_BENEFICIARIES_TYPEHASH =
+        keccak256("SetBeneficiaries(bytes32 beneficiariesHash,uint256 nonce,uint256 deadline)");
+    bytes32 private constant SET_LIVENESS_CONFIG_TYPEHASH = keccak256(
+        "SetLivenessConfig(uint64 heartbeatInterval,uint64 timeoutDuration,uint64 gracePeriod,uint256 nonce,uint256 deadline)"
+    );
+    bytes32 private constant SET_RECOVERY_CONFIG_TYPEHASH = keccak256(
+        "SetRecoveryConfig(address recoveryKey,address safeVault,bool allowSharedRecovery,uint256 nonce,uint256 deadline)"
+    );
+    bytes32 private constant SET_TRACKED_TOKENS_TYPEHASH =
+        keccak256("SetTrackedTokens(bytes32 tokensHash,uint256 nonce,uint256 deadline)");
 
     // ──────────────────────────────────────────────
     // State
@@ -114,6 +127,11 @@ contract LegacyKeeper {
     ///      be replayed into an evacuation.
     mapping(uint256 => bool) public nonceUsed;
 
+    /// @dev Configuration actions use independent nonce spaces. Nonce 7 for
+    ///      beneficiaries does not block nonce 7 for liveness, while the
+    ///      action-specific typehash still prevents cross-action replay.
+    mapping(bytes32 => mapping(uint256 => bool)) public actionNonceUsed;
+
     /// @dev Pull fallback for pushes that fail.
     mapping(address => uint256) public pendingWithdrawal;
 
@@ -129,8 +147,10 @@ contract LegacyKeeper {
     bool public evacuationExecuted;
     uint64 public inheritanceTimestamp;
     uint64 public evacuationTimestamp;
+    bool public initialized;
 
     uint256 private _locked = 1;
+    address private immutable _initializer;
 
     // ──────────────────────────────────────────────
     // Events
@@ -170,8 +190,10 @@ contract LegacyKeeper {
         _locked = 1;
     }
 
-    constructor() {
-        owner = msg.sender;
+    constructor(address initialOwner) {
+        require(initialOwner != address(0), "LK: invalid owner");
+        owner = initialOwner;
+        _initializer = msg.sender;
         liveness = LivenessConfig({
             heartbeatInterval: 1 days,
             timeoutDuration: 30 days,
@@ -187,6 +209,29 @@ contract LegacyKeeper {
         });
     }
 
+    /// @notice One-time factory bootstrap. Every field is already bound into
+    ///         the owner's signed CreatePlan config hash at the factory.
+    function initializePlan(
+        uint64 heartbeatInterval_,
+        uint64 timeoutDuration_,
+        uint64 gracePeriod_,
+        address[] calldata beneficiaryWallets,
+        uint16[] calldata beneficiaryShares,
+        address recoveryKey,
+        address safeVault,
+        address[] calldata tokens,
+        bool allowSharedRecovery
+    ) external {
+        require(msg.sender == _initializer, "LK: not initializer");
+        require(!initialized, "LK: already initialized");
+        initialized = true;
+
+        _setLivenessConfig(heartbeatInterval_, timeoutDuration_, gracePeriod_);
+        _replaceBeneficiaries(beneficiaryWallets, beneficiaryShares);
+        _setRecoveryConfig(recoveryKey, safeVault, allowSharedRecovery);
+        _replaceTrackedTokens(tokens);
+    }
+
     // ──────────────────────────────────────────────
     // Liveness
     // ──────────────────────────────────────────────
@@ -194,6 +239,7 @@ contract LegacyKeeper {
     /// @notice Refresh liveness directly. Cheapest path when the owner has gas.
     function heartbeat() external onlyOwner {
         require(liveness.livenessActive, "LK: liveness inactive");
+        _requireHeartbeatCooldown();
         _recordHeartbeat(msg.sender);
     }
 
@@ -206,7 +252,15 @@ contract LegacyKeeper {
     function heartbeatBySig(uint256 nonce, uint256 deadline, bytes calldata signature) external {
         require(liveness.livenessActive, "LK: liveness inactive");
         _consumeSignature(HEARTBEAT_TYPEHASH, nonce, deadline, signature, owner);
+        _requireHeartbeatCooldown();
         _recordHeartbeat(owner);
+    }
+
+    function _requireHeartbeatCooldown() private view {
+        require(
+            block.timestamp >= uint256(liveness.lastHeartbeat) + HEARTBEAT_COOLDOWN,
+            "LK: heartbeat cooldown"
+        );
     }
 
     function _recordHeartbeat(address who) private {
@@ -487,6 +541,102 @@ contract LegacyKeeper {
         require(_recover(digest, signature) == expectedSigner, "LK: invalid signature");
     }
 
+    function _consumeHashedActionSignature(
+        bytes32 typehash,
+        bytes32 payloadHash,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature,
+        address expectedSigner
+    ) private {
+        bytes32 structHash = keccak256(
+            abi.encode(typehash, payloadHash, nonce, deadline)
+        );
+        _consumeActionDigest(
+            typehash,
+            nonce,
+            deadline,
+            structHash,
+            signature,
+            expectedSigner
+        );
+    }
+
+    function _consumeLivenessConfigSignature(
+        uint64 heartbeatInterval_,
+        uint64 timeoutDuration_,
+        uint64 gracePeriod_,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) private {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SET_LIVENESS_CONFIG_TYPEHASH,
+                heartbeatInterval_,
+                timeoutDuration_,
+                gracePeriod_,
+                nonce,
+                deadline
+            )
+        );
+        _consumeActionDigest(
+            SET_LIVENESS_CONFIG_TYPEHASH,
+            nonce,
+            deadline,
+            structHash,
+            signature,
+            owner
+        );
+    }
+
+    function _consumeRecoveryConfigSignature(
+        address recoveryKey,
+        address safeVault,
+        bool allowSharedRecovery,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature,
+        address expectedSigner
+    ) private {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SET_RECOVERY_CONFIG_TYPEHASH,
+                recoveryKey,
+                safeVault,
+                allowSharedRecovery,
+                nonce,
+                deadline
+            )
+        );
+        _consumeActionDigest(
+            SET_RECOVERY_CONFIG_TYPEHASH,
+            nonce,
+            deadline,
+            structHash,
+            signature,
+            expectedSigner
+        );
+    }
+
+    function _consumeActionDigest(
+        bytes32 typehash,
+        uint256 nonce,
+        uint256 deadline,
+        bytes32 structHash,
+        bytes calldata signature,
+        address expectedSigner
+    ) private {
+        require(block.timestamp <= deadline, "LK: signature expired");
+        require(!actionNonceUsed[typehash][nonce], "LK: action nonce used");
+        actionNonceUsed[typehash][nonce] = true;
+
+        bytes32 digest = keccak256(
+            abi.encodePacked("\x19\x01", domainSeparator(), structHash)
+        );
+        require(_recover(digest, signature) == expectedSigner, "LK: invalid signature");
+    }
+
     /// @dev Binds every signature to this chain and this deployment.
     function domainSeparator() public view returns (bytes32) {
         return keccak256(
@@ -529,6 +679,10 @@ contract LegacyKeeper {
     // ──────────────────────────────────────────────
 
     function addBeneficiary(address wallet, uint16 shareBps) external onlyOwner {
+        _addBeneficiary(wallet, shareBps);
+    }
+
+    function _addBeneficiary(address wallet, uint16 shareBps) private {
         require(wallet != address(0), "LK: invalid wallet");
         require(!isBeneficiary[wallet], "LK: already beneficiary");
         require(beneficiaries.length < MAX_BENEFICIARIES, "LK: too many beneficiaries");
@@ -543,6 +697,72 @@ contract LegacyKeeper {
         totalShareBps += shareBps;
 
         emit BeneficiaryAdded(wallet, shareBps);
+    }
+
+    /// @notice Atomically replace the full allocation through an owner-signed
+    ///         KeeperHub action. Partial totals never become live state.
+    function setBeneficiariesBySig(
+        address[] calldata wallets,
+        uint16[] calldata shares,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        bytes32 beneficiariesHash = keccak256(abi.encode(wallets, shares));
+        _consumeHashedActionSignature(
+            SET_BENEFICIARIES_TYPEHASH,
+            beneficiariesHash,
+            nonce,
+            deadline,
+            signature,
+            owner
+        );
+        _replaceBeneficiaries(wallets, shares);
+    }
+
+    function _replaceBeneficiaries(
+        address[] calldata wallets,
+        uint16[] calldata shares
+    ) private {
+        _validateBeneficiaries(wallets, shares);
+        _clearBeneficiaries();
+        uint256 len = wallets.length;
+        for (uint256 i = 0; i < len; i++) {
+            _addBeneficiary(wallets[i], shares[i]);
+        }
+    }
+
+    function _clearBeneficiaries() private {
+        uint256 existing = beneficiaries.length;
+        for (uint256 i = 0; i < existing; i++) {
+            Beneficiary memory removed = beneficiaries[i];
+            delete beneficiaryIndex[removed.wallet];
+            isBeneficiary[removed.wallet] = false;
+            emit BeneficiaryRemoved(removed.wallet, removed.shareBps);
+        }
+        delete beneficiaries;
+        totalShareBps = 0;
+    }
+
+    function _validateBeneficiaries(
+        address[] calldata wallets,
+        uint16[] calldata shares
+    ) private pure {
+        uint256 len = wallets.length;
+        require(len > 0, "LK: no beneficiaries");
+        require(len == shares.length, "LK: beneficiary length mismatch");
+        require(len <= MAX_BENEFICIARIES, "LK: too many beneficiaries");
+
+        uint256 total;
+        for (uint256 i = 0; i < len; i++) {
+            require(wallets[i] != address(0), "LK: invalid wallet");
+            require(shares[i] > 0 && shares[i] <= TOTAL_BPS, "LK: invalid share");
+            total += shares[i];
+            for (uint256 j = 0; j < i; j++) {
+                require(wallets[j] != wallets[i], "LK: duplicate beneficiary");
+            }
+        }
+        require(total == TOTAL_BPS, "LK: shares incomplete");
     }
 
     /// @dev Swap-and-pop: the entry actually leaves the array, so a removed
@@ -570,6 +790,28 @@ contract LegacyKeeper {
 
     /// @notice Register the ERC-20s to pull by allowance at execution time.
     function setTrackedTokens(address[] calldata tokens) external onlyOwner {
+        _replaceTrackedTokens(tokens);
+    }
+
+    function setTrackedTokensBySig(
+        address[] calldata tokens,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        bytes32 tokensHash = keccak256(abi.encode(tokens));
+        _consumeHashedActionSignature(
+            SET_TRACKED_TOKENS_TYPEHASH,
+            tokensHash,
+            nonce,
+            deadline,
+            signature,
+            owner
+        );
+        _replaceTrackedTokens(tokens);
+    }
+
+    function _replaceTrackedTokens(address[] calldata tokens) private {
         require(tokens.length <= MAX_TRACKED_TOKENS, "LK: too many tokens");
 
         uint256 existing = trackedTokens.length;
@@ -600,6 +842,7 @@ contract LegacyKeeper {
     function setSafeVault(address vaultAddress) external onlyOwner {
         require(!vault.recoveryKeyRegistered, "LK: use setSafeVaultBySig");
         require(vaultAddress != address(0), "LK: invalid vault");
+        require(vaultAddress != owner, "LK: vault must differ from owner");
         vault.safeVault = vaultAddress;
         emit ConfigUpdated("safe_vault");
     }
@@ -613,6 +856,11 @@ contract LegacyKeeper {
     ) external {
         require(vault.recoveryKeyRegistered, "LK: recovery key not set");
         require(vaultAddress != address(0), "LK: invalid vault");
+        require(vaultAddress != owner, "LK: vault must differ from owner");
+        require(
+            vaultAddress != vault.recoveryKeyAddress,
+            "LK: shared recovery requires config signature"
+        );
         _consumeAddressSignature(
             SET_VAULT_TYPEHASH, vaultAddress, nonce, deadline,
             signature, vault.recoveryKeyAddress
@@ -626,6 +874,10 @@ contract LegacyKeeper {
         require(!vault.recoveryKeyRegistered, "LK: use rotateRecoveryKey");
         require(recoveryKey != address(0), "LK: invalid recovery key");
         require(recoveryKey != owner, "LK: recovery must differ from owner");
+        require(
+            recoveryKey != vault.safeVault,
+            "LK: shared recovery requires config signature"
+        );
         vault.recoveryKeyAddress = recoveryKey;
         vault.recoveryKeyRegistered = true;
         emit RecoveryKeyRegistered(recoveryKey);
@@ -646,6 +898,10 @@ contract LegacyKeeper {
         require(vault.recoveryKeyRegistered, "LK: recovery key not set");
         require(newKey != address(0), "LK: invalid recovery key");
         require(newKey != owner, "LK: recovery must differ from owner");
+        require(
+            newKey != vault.safeVault,
+            "LK: shared recovery requires config signature"
+        );
 
         _consumeAddressSignature(
             ROTATE_RECOVERY_TYPEHASH, newKey, nonce, deadline,
@@ -656,11 +912,92 @@ contract LegacyKeeper {
         vault.recoveryKeyAddress = newKey;
     }
 
+    /// @notice Configure both recovery addresses in one reviewed action. The
+    ///         owner signs first registration; the current recovery key signs
+    ///         every later change so a compromised owner cannot redirect it.
+    function setRecoveryConfigBySig(
+        address recoveryKey,
+        address safeVault,
+        bool allowSharedRecovery,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        address expectedSigner = vault.recoveryKeyRegistered
+            ? vault.recoveryKeyAddress
+            : owner;
+        _consumeRecoveryConfigSignature(
+            recoveryKey,
+            safeVault,
+            allowSharedRecovery,
+            nonce,
+            deadline,
+            signature,
+            expectedSigner
+        );
+        _setRecoveryConfig(recoveryKey, safeVault, allowSharedRecovery);
+    }
+
+    function _setRecoveryConfig(
+        address recoveryKey,
+        address safeVault,
+        bool allowSharedRecovery
+    ) private {
+        require(recoveryKey != address(0), "LK: invalid recovery key");
+        require(safeVault != address(0), "LK: invalid vault");
+        require(recoveryKey != owner, "LK: recovery must differ from owner");
+        require(safeVault != owner, "LK: vault must differ from owner");
+        require(
+            recoveryKey != safeVault || allowSharedRecovery,
+            "LK: shared recovery not acknowledged"
+        );
+
+        address previous = vault.recoveryKeyAddress;
+        vault.recoveryKeyAddress = recoveryKey;
+        vault.recoveryKeyRegistered = true;
+        vault.safeVault = safeVault;
+
+        if (previous == address(0)) {
+            emit RecoveryKeyRegistered(recoveryKey);
+        } else if (previous != recoveryKey) {
+            emit RecoveryKeyRotated(previous, recoveryKey);
+        }
+        emit ConfigUpdated("safe_vault");
+    }
+
     function setLivenessConfig(
         uint64 heartbeatInterval_,
         uint64 timeoutDuration_,
         uint64 gracePeriod_
     ) external onlyOwner {
+        _setLivenessConfig(heartbeatInterval_, timeoutDuration_, gracePeriod_);
+    }
+
+    function setLivenessConfigBySig(
+        uint64 heartbeatInterval_,
+        uint64 timeoutDuration_,
+        uint64 gracePeriod_,
+        uint256 nonce,
+        uint256 deadline,
+        bytes calldata signature
+    ) external {
+        _consumeLivenessConfigSignature(
+            heartbeatInterval_,
+            timeoutDuration_,
+            gracePeriod_,
+            nonce,
+            deadline,
+            signature
+        );
+        _setLivenessConfig(heartbeatInterval_, timeoutDuration_, gracePeriod_);
+    }
+
+    function _setLivenessConfig(
+        uint64 heartbeatInterval_,
+        uint64 timeoutDuration_,
+        uint64 gracePeriod_
+    ) private {
+        require(heartbeatInterval_ > 0, "LK: invalid heartbeat interval");
         require(timeoutDuration_ > 0, "LK: invalid timeout");
         liveness.heartbeatInterval = heartbeatInterval_;
         liveness.timeoutDuration = timeoutDuration_;

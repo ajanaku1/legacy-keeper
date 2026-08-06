@@ -1,262 +1,386 @@
-# LegacyKeeper: onchain inheritance and emergency evacuation
+# LegacyKeeper
 
-An autonomous agent that moves your assets when you cannot: after you go silent, or the moment your wallet is compromised. Execution runs entirely through KeeperHub.
+**Verifiable onchain continuity for self-custodied wallets.**
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8.24-363636)](https://soliditylang.org/)
-[![Tests](https://img.shields.io/badge/tests-102_passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15-111827?logo=nextdotjs)](dashboard/package.json)
+[![Solidity 0.8.24](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)](contracts/LegacyKeeper.sol)
+[![Core tests](https://img.shields.io/badge/core_tests-307_passing-16a34a)](#verification)
+[![Sepolia](https://img.shields.io/badge/network-Sepolia-627eea?logo=ethereum)](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Verified transactions
+<p align="center">
+  <img src="dashboard/public/legacykeeper-mark.svg" alt="LegacyKeeper shield mark" width="112" />
+</p>
 
-Every link below is a real Sepolia transaction executed through KeeperHub.
+LegacyKeeper lets a wallet owner define, maintain, and recover an inheritance
+plan through signed KeeperHub workflows with independent Sepolia verification.
 
-| What | Transaction | Evidence |
-|------|-------------|----------|
-| Inheritance, recovered after 3 failed attempts | [`0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) | 156,896 gas, landed on attempt 4 |
-| Inheritance, exact 60/40 split | [`0x6efe67a5`](https://sepolia.etherscan.io/tx/0x6efe67a56e725408785e048eb3a7f1a2598ac70e4cdbbdbdc9cd554cd7d12308) | 0.006 and 0.004 ETH delivered |
-| Emergency evacuation | [`0x9fe43045`](https://sepolia.etherscan.io/tx/0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f257bba6ffd) | recovery key only, owner key unused |
-| Gasless heartbeat, sponsored | [`0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598) | 83,606 gas, paid by KeeperHub |
-| Heartbeat via KeeperHub **Webhook workflow** | [`0x291b7924`](https://sepolia.etherscan.io/tx/0x291b792438560979465254499a4eac55708ee2bc47d44c457ad33e6d83f9c2c3) | automatic run `wrun_01KYZZR8GH2X2FACPB8C59DX7G`, sponsored |
+## Live Demo
 
-Contract: [`0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA`](https://sepolia.etherscan.io/address/0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA#code), source verified.
+[Open LegacyKeeper](https://legacy-keeper-seven.vercel.app) or
+[inspect the deployed factory](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576).
 
-![LegacyKeeper dashboard showing live Sepolia state and KeeperHub execution history](docs/images/landing.png)
+The live release uses Sepolia. Do not connect a wallet that holds mainnet funds.
 
-Demo video: [watch the 50-second evidence walkthrough](https://github.com/ajanaku1/legacy-keeper/raw/refs/heads/main/video/out/legacykeeper-demo.mp4). It covers the signed heartbeat path, a recovered inheritance run, KeeperHub execution proof, and the paid allowance check.
+## Product Preview
 
----
+### Public landing page
 
-## What is LegacyKeeper?
+![LegacyKeeper production landing page with Sepolia wallet controls and the continuity vault](readme-assets/legacykeeper-landing.png)
 
-Two things go wrong with self-custody. You lose access permanently (keys lost, incapacity, death), or someone else gains access and you have minutes to react.
+### Wallet dashboard
 
-Both need a system that acts without the key in question. LegacyKeeper watches for proof you are alive, and if that proof stops arriving, it distributes your assets to people you named. Separately, a recovery key you keep elsewhere can sweep everything to a safe vault at any moment, even if your wallet key is fully compromised.
+![LegacyKeeper wallet dashboard with check-in, verification route, and plan readiness](readme-assets/legacykeeper-dashboard.png)
 
-The transaction has to fire when nobody is watching. That constraint is the whole product, and it is why execution runs through KeeperHub rather than a script on somebody's laptop.
+The dashboard capture uses a seeded test-only Sepolia wallet.
 
----
+## What Is LegacyKeeper?
+
+LegacyKeeper gives each owner wallet one continuity plan. The owner defines
+beneficiaries, timing, recovery authority, and optional tracked tokens, then
+signs an exact EIP-712 intent for KeeperHub to relay. The app reports success
+only after the KeeperHub result, transaction receipt, expected event, factory
+mapping, and resulting contract state agree.
 
 ## Features
 
-- **Liveness inheritance.** Configurable timeout and grace period. Miss both, and distribution becomes callable by anyone. The share split is exact to the wei.
-- **Emergency evacuation.** Authorized by a separate recovery key. The owner key signs nothing and is never consulted.
-- **Assets stay in your wallet.** The contract holds ERC-20 allowances, not balances, and pulls at execution time. You never move funds into it to be protected.
-- **Survives hostile recipients.** A beneficiary that reverts on receive, or one frozen by a token blocklist, gets a claimable balance instead of bricking the estate for everyone else.
-- **Gasless proof of life.** Sign an EIP-712 heartbeat offline. KeeperHub sponsors the gas, so staying alive never requires a funded wallet.
-- **Recovery is visible.** The audit ledger records every attempt, so a failure followed by a success stays in the record rather than being overwritten.
-- **Ten verification gates.** A single script decides whether the project is done. It fails on fabricated success values, stub modules, and any direct-RPC transaction send.
+- **One plan per wallet.** `LegacyKeeperFactory` verifies the signed setup,
+  deploys the plan, and records `planOf(owner)`.
+- **Seven-step onboarding.** Network, timing, beneficiaries, recovery, optional
+  assets, review/sign, and verified creation live in a fixed-height resumable
+  modal.
+- **Sponsored liveness.** The owner signs a heartbeat; KeeperHub relays it. A
+  plan accepts at most one heartbeat in a rolling 24-hour window.
+- **Editable signed policy.** Beneficiaries, allocations, timing, recovery, and
+  tracked assets can be updated after activation without making KeeperHub the
+  owner.
+- **Inheritance and evacuation.** Inheritance is time-gated and permissionless
+  once eligible. Emergency evacuation requires the separately registered
+  recovery wallet.
+- **Wallet-scoped evidence.** Activity is durable in PostgreSQL, filtered to the
+  connected owner in the product UI, and displayed five records per page
+  without erasing failed attempts that later recover.
+- **Private Telegram alerts.** A private Telegram identity is bound to a wallet
+  by a one-time bot session plus owner signature. One Telegram account can
+  monitor two wallets; each wallet has one active recipient.
+- **Telegram recovery entry.** `/evacuate` can open a short-lived recovery page,
+  but Telegram never signs or authorizes the transaction. The registered
+  recovery wallet still must approve it.
 
----
+There is no mainnet deployment, subscription, payment, premium tier, group-chat
+linking, or Telegram custody in this hackathon release.
 
-## Capability matrix
+## Verified Sepolia evidence
 
-Status is evidence-based. "Live" means a transaction or artifact exists.
+These are real transactions, not illustrative hashes.
 
-| Capability | Status | Evidence |
+| Journey | Transaction | What it proves |
 |---|---|---|
-| Inheritance distribution | Live | tx `0x3e8505e2`, `0x6efe67a5` |
-| Emergency evacuation | Live | tx `0x9fe43045` |
-| Gasless sponsored heartbeat | Live | tx `0x0041106b`, `"sponsored": true` |
-| Execution via KeeperHub workflows | Live | 5 enabled workflows, webhook tx `0x291b7924` |
-| Schedule, Webhook, Event, Block triggers | Live | automatic executions captured in `reports/live-workflow-evidence.json` |
-| Audit trail with retry history | Live | `loop/memory/audit.jsonl` |
-| ERC-20 inheritance and evacuation | Live | 36 contract tests |
-| Telegram bot and workflow notifications | Live | KeeperHub connection test plus successful Event notification run |
-| Dashboard | Live | public chain state, signed KeeperHub heartbeat, receipt and state proof |
-| x402 paid allowance monitor | Live | [Base tx `0x03376097`](https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5), $0.003 USDC; exact LegacyKeeper owner/token/spender checked |
-| MPP over Tempo | Discovered, blocked | OneSource advertises MPP; AgentCash Tempo balance is $0.00 |
-| Private routing | Discovered, unavailable | live schema exposes no request parameter or route receipt |
-| Mainnet | Out of scope | Sepolia only |
+| Wallet-scoped sponsored check-in | [`0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) | Dashboard → KeeperHub → `HeartbeatRecorded`, retained for the owner |
+| Inheritance recovered after failures | [`0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) | A later success does not erase the failed route before it |
+| Exact 60/40 inheritance | [`0x6efe67a5`](https://sepolia.etherscan.io/tx/0x6efe67a56e725408785e048eb3a7f1a2598ac70e4cdbbdbdc9cd554cd7d12308) | 0.006 and 0.004 ETH delivered |
+| Recovery-key evacuation | [`0x9fe43045`](https://sepolia.etherscan.io/tx/0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f257bba6ffd) | Recovery key authorized the sweep; owner key was not used |
+| Sponsored heartbeat | [`0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598) | KeeperHub paid 83,606 gas |
 
-Private routing is not claimed. The live KeeperHub schema exposes no route
-request parameter or receipt, and an onchain preference flag cannot prove how a
-transaction was submitted.
+The inheritance and evacuation proofs predate the wallet-scoped factory but
+exercise the same plan contract predicates. The current registry is
+`0xf434788C775a36736CF3Ce0D2e0368E22BF9c576`.
 
-The x402 payment is product-linked, not a disconnected payment demo. OneSource
-read Circle's Sepolia USDC allowance for the deployed owner's wallet with the
-LegacyKeeper contract as spender. The paid result was zero; the app consumed
-that result together with the empty tracked-token list and classified ERC-20
-coverage as **at risk**. The exact 402 terms, policy ceiling, payment receipt,
-retry, response binding, and MPP blocker are in
-[`reports/paid-rail-evidence.json`](reports/paid-rail-evidence.json).
+## How It Works
 
----
+```text
+owner or recovery wallet
+        │ signs exact EIP-712 intent
+        ▼
+LegacyKeeper server ── resolves factory ownership and validates action
+        │
+        ▼
+KeeperHub wallet-scoped workflow ── relays contract write on Sepolia
+        │
+        ▼
+receipt + expected event + registry + resulting state
+        │
+        ├── durable wallet activity
+        └── Telegram delivery after verification
+```
 
-## Product boundaries
+KeeperHub is load-bearing for product writes, but its acceptance response is
+not trusted as completion. API keys remain server-only. The app fails closed if
+the execution ID, transaction hash, receipt, event, or state proof is missing.
 
-Stated plainly, because each one changes what the product can promise.
+### Asset custody
 
-**ERC-20 protection lasts only while your allowance stands.** Revoke it and token inheritance silently stops working. Nothing in the system notices on its own, which is why an independent paid allowance check exists.
+- ERC-20 balances remain in the owner wallet. The plan pulls only the available
+  allowance when inheritance or evacuation executes.
+- Native ETH cannot be pulled from an EOA. Protecting native ETH requires a
+  separate explicit deposit into the plan.
+- Revoking an ERC-20 allowance removes that token's practical protection until
+  the allowance is restored.
 
-**Native ETH must be deposited into the contract.** An EOA's balance cannot be pulled by a third party. Tokens stay in your wallet; ETH does not.
+### Recovery authority
 
-**Sponsorship and private routing are different paths.** A transaction is never presented as both.
+- The owner cannot replace a registered recovery authority unilaterally.
+- A recovery-key rotation requires the current recovery key.
+- Telegram can initiate a recovery journey but never receives a reusable
+  signature, private key, seed phrase, or transaction authority.
 
-**Losing the recovery key disables evacuation.** Inheritance still works. Rotation exists, but requires the current key.
+## Application routes
 
----
+| Route | Purpose |
+|---|---|
+| `/` | Public product, proof model, operations, and Telegram security boundary |
+| `/dashboard` | Plan readiness, countdown, daily check-in, and latest proof |
+| `/beneficiaries` | Beneficiary addresses and exact allocation |
+| `/activity` | Owner-scoped KeeperHub attempts and Etherscan proof, five per page |
+| `/recovery` | Recovery authority, safe vault, and evacuation entry |
+| `/settings` | Full-plan review, signed policy updates, assets, and Telegram links |
+| `/recovery/telegram` | Short-lived Telegram recovery entry requiring the recovery wallet |
 
-## Tech stack
+Disconnected visitors see the public landing page or a wallet gate, never
+another wallet's plan or activity.
+
+## API Reference
+
+All write routes validate exact signed intent and fail closed when KeeperHub or
+onchain proof is incomplete. Telegram management routes use short-lived signed
+requests or a private, signed wallet-session cookie.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/audit?owner={address}&page={number}` | Return five wallet-scoped activity records per page |
+| `POST` | `/api/plans` | Verify and relay a signed plan-creation intent |
+| `POST` | `/api/configuration` | Verify and relay a signed policy update |
+| `POST` | `/api/heartbeat` | Verify and relay the owner's daily check-in |
+| `POST` | `/api/evacuation` | Verify and relay recovery-key evacuation |
+| `POST` | `/api/integrations/keeperhub/events` | Accept authenticated, verified KeeperHub events |
+| `GET`, `POST` | `/api/telegram/link-sessions` | Create or inspect a private Telegram link session |
+| `GET`, `POST`, `PUT` | `/api/telegram/links` | Restore, create, or authenticate a wallet link |
+| `POST` | `/api/telegram/test` | Send a signed test notification |
+| `POST` | `/api/telegram/unlink` | Remove a Telegram link after wallet authorization |
+| `POST` | `/api/telegram/webhook` | Receive Telegram updates with secret-token validation |
+| `GET` | `/api/telegram/evacuation-entry` | Validate a short-lived recovery entry token |
+
+## Telegram linking and alerts
+
+1. Settings creates a five-minute opaque link session and opens the bot.
+2. The webhook accepts only a private chat and records Telegram's immutable user
+   ID; usernames are display metadata only.
+3. The owner signs `LinkTelegram` typed data naming that Telegram user, wallet,
+   chain, nonce, and deadline.
+4. PostgreSQL activates the link transactionally, enforcing two wallets per
+   Telegram account and one recipient per wallet.
+5. A seven-day HttpOnly, Secure, SameSite wallet session restores linked state
+   across tabs and deployments without exposing Telegram metadata in browser
+   storage.
+
+Bot commands:
+
+- `/wallets`: list linked wallets and notification state.
+- `/status`: read monitoring status for a linked plan.
+- `/evacuate`: open recovery authorization; the recovery wallet must sign.
+- `/unlink`: stop delivery without changing the onchain plan.
+- `/help`: explain the security boundary.
+
+Dashboard-originated plan creation, configuration, check-in, and evacuation
+notify Telegram only after onchain verification. The current free KeeperHub
+workflow tier has no wallet-specific outbound HTTP action, so the four enabled
+wallet workflows contain no embedded Telegram recipient or direct Telegram
+node. The authenticated integration route is ready for dynamic KeeperHub event
+delivery when that action is available.
+
+## KeeperHub workflows
+
+`workflows/wallet-scoped-definitions.ts` is the reproducible source. The stored
+platform exports live in `workflows/exported/`.
+
+| Workflow | Write |
+|---|---|
+| Plan Creation | `LegacyKeeperFactory.createPlan` |
+| Plan Configuration | Signed beneficiary, timing, recovery, or token update |
+| Heartbeat Relay | `LegacyKeeper.heartbeatBySig` |
+| Panic Evacuation | `LegacyKeeper.evacuate` |
+
+Every plan-specific workflow first rereads `factory.planOf(owner)` and compares
+it with the requested plan before relaying the write.
+
+## Smart Contracts
+
+| Contract | Responsibility |
+|---|---|
+| [`LegacyKeeperFactory`](contracts/LegacyKeeperFactory.sol) | Verify the owner's creation signature, deploy one initialized plan, and register `planOf(owner)` |
+| [`LegacyKeeper`](contracts/LegacyKeeper.sol) | Enforce liveness, inheritance, recovery, asset, and signed-configuration predicates for one owner |
+
+The deployed Sepolia factory is
+[`0xf434...c576`](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576).
+Contract tests cover time gates, replay protection, exact allocation,
+permissionless inheritance, recovery authority, token behavior, and hostile
+beneficiaries.
+
+## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Contract | Solidity 0.8.24, EIP-712, EIP-2 malleability guard |
-| Execution | KeeperHub MCP, workflows, sponsored gas |
-| Agent | TypeScript, ethers v6, JSON-RPC over streamable HTTP |
-| Dashboard | Next.js 15, wagmi, viem |
-| Bot | Telegram Bot API, long polling |
-| Tests | Hardhat (36 contract), Vitest (51 agent, 15 dashboard) |
-| Payments | x402 over Base USDC |
+|---|---|
+| Contracts | Solidity 0.8.24, Hardhat, EIP-712 |
+| Execution | KeeperHub MCP and wallet-scoped webhook workflows |
+| Web app | Next.js 15 App Router, React 19, wagmi, viem, TanStack Query |
+| Data | PostgreSQL, Drizzle ORM |
+| Notifications | Telegram Bot API webhook |
+| Tests | Hardhat, Vitest, Playwright |
+| Hosting | Vercel Functions and hosted PostgreSQL |
 
----
+## Testing the App
 
-## Environment variables
+1. Open the [production app](https://legacy-keeper-seven.vercel.app).
+2. Connect a browser wallet and switch it to Sepolia when prompted.
+3. Fund the owner and recovery wallets with test-only Sepolia ETH.
+4. Complete onboarding, review the exact plan, and sign its creation intent.
+5. Wait for KeeperHub settlement and confirm the registered plan on the
+   dashboard or Etherscan.
+6. Check in once. The contract blocks another heartbeat for 24 hours.
+7. Open Settings to link a private Telegram chat, then send a test alert.
+8. Open Activity to inspect wallet-scoped attempts and transaction evidence.
 
-Copy `.env.example` to `.env`. Keep `.env` untracked.
+Use separate owner and recovery wallets when testing evacuation. Telegram can
+open the recovery route, but the registered recovery wallet must authorize the
+transaction.
 
-| Variable | Required for | Notes |
-|---|---|---|
-| `KEEPERHUB_API_KEY` | MCP and workflow inspection | Organization key with the `kh_` prefix |
-| `KEEPERHUB_WEBHOOK_API_KEY` | Dashboard and runner webhooks | User-scoped key with the `wfb_` prefix |
-| `SEPOLIA_RPC_URL` | Deployment and independent verification | Alchemy, Infura, or another Sepolia RPC |
-| `DEPLOYER_PRIVATE_KEY` | Contract deployment and owner signatures | Testnet burner only |
-| `LEGACY_KEEPER_ADDRESS` | Agent and dashboard | Filled after deployment |
-| `TELEGRAM_CHAT_ID` | Enabled workflow notifications | KeeperHub must have a Telegram integration |
-| `RECOVERY_KEY_ADDRESS` | Emergency setup | Address only; keep the recovery private key elsewhere |
-| `SAFE_VAULT_ADDRESS` | Emergency destination | Must not be the compromised owner wallet |
+## Running Locally
 
-Optional workflow IDs in `.env.example` default to the verified LegacyKeeper
-deployment. A new organization receives new IDs when it runs
-`npm run workflows:deploy -- --enable`.
-
-## Server routes
-
-| Method | Endpoint | Browser payload | Verified result |
-|---|---|---|---|
-| `POST` | `/api/heartbeat` | `nonce`, `deadline`, `signature` | KeeperHub execution, sponsored transaction, receipt, event, advanced heartbeat |
-| `POST` | `/api/evacuation` | `nonce`, `deadline`, `signature` | Recovery signer, KeeperHub execution, receipt, evacuation event and state |
-| `GET` | `/api/audit` | None | Attempt history from the append-only agent ledger |
-
-API keys never cross the browser boundary. Both write routes recover the typed
-data signer before they call KeeperHub.
-
----
-
-## How it works
-
-```
-   owner signs                      KeeperHub                     Sepolia
-   heartbeat  ──────────────►  ┌──────────────────┐  ────────►  LegacyKeeper
-   (offline, no gas)           │  Schedule  cron  │              .heartbeatBySig
-                               │  Webhook   panic │
-   silence                     │  Event     grace │              .executeInheritance
-   30 days ──────────────────► │  Block     health│  ────────►   (permissionless,
-                               │                  │               time-gated)
-   recovery key                │  smart gas       │
-   signs evacuate ───────────► │  retries         │  ────────►   .evacuate
-                               │  sponsorship     │               (recovery key only)
-                               └──────────────────┘
-                                        │
-                                        ▼
-                                   audit ledger
-                          trigger, simulation, tx, gas,
-                          outcome, retries, timestamp
-```
-
-The contract is permissionless where it matters. `executeInheritance()` can be called by anyone once the grace period expires, because the owner is by definition absent when it must run. Safety comes from the time gate, not from who is asking.
-
----
-
-## Smart contract
-
-| Function | Access | Purpose |
-|----------|--------|---------|
-| `heartbeat()` | owner | Emergency contract fallback outside normal product check-ins |
-| `heartbeatBySig(nonce, deadline, sig)` | anyone with a valid signature | Gasless relayed heartbeat |
-| `executeInheritance()` | anyone, after grace | Distribute native ETH by share |
-| `executeInheritanceERC20(token)` | anyone, after grace | Distribute a tracked token |
-| `evacuate(nonce, deadline, sig)` | recovery key signature | Sweep everything to the safe vault |
-| `rotateRecoveryKey(newKey, ...)` | current recovery key | Rotate without the owner key |
-| `claimToken(token)` | beneficiary | Claim a share whose delivery failed |
-
-Every signature is EIP-712, bound to chainId, this contract address, an action-specific typehash, a nonce, and a deadline. A signature for one action cannot authorize another, and one leaked signature cannot drain a second deployment.
-
----
-
-## Testing the app
-
-Full walkthrough: [`starter/docs/tutorial.md`](starter/docs/tutorial.md). Short version:
+Requirements: Node.js 20 or 22, npm, a Sepolia RPC URL, testnet-only wallet,
+KeeperHub credentials, and PostgreSQL for Telegram/activity features.
 
 ```bash
 git clone https://github.com/ajanaku1/legacy-keeper.git
 cd legacy-keeper
 nvm use
-./starter/setup.sh              # creates .env on the first run
-# Fill the five required values listed by the script.
-./starter/setup.sh              # deploys, enables workflows, proves a heartbeat
+npm ci
+npm --prefix dashboard ci
+cp .env.example .env
 ```
 
-Run everything:
+Set the values in `.env`, then:
 
 ```bash
-./verify.sh                     # 10 gates plus phase predicates
-npm test                        # 36 contract tests
-npm run test:agent              # 51 agent tests
-npm run test:dashboard          # 15 dashboard route and boundary tests
-npm run agent:bot               # monitor + Telegram
-cd dashboard && npm install && npm run dev
+npm run compile
+npm run test
+npm run test:agent
+npm run test:dashboard
+npm --prefix dashboard run db:migrate
+npm --prefix dashboard run dev
 ```
 
----
+Open `http://127.0.0.1:3000`. Wallet writes require Sepolia (`11155111`).
+
+### Environment groups
+
+The full commented template is [.env.example](.env.example).
+
+| Group | Variables |
+|---|---|
+| KeeperHub | `KEEPERHUB_API_KEY`, `KEEPERHUB_WEBHOOK_API_KEY`, four workflow IDs |
+| Chain | `SEPOLIA_RPC_URL`, `NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS` |
+| Deployment | `DEPLOYER_PRIVATE_KEY`, optional `ETHERSCAN_API_KEY` |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ACTION_SECRET`, `TELEGRAM_SESSION_SECRET` |
+| Persistence | `DATABASE_URL` |
+| Public origin | `NEXT_PUBLIC_APP_URL` |
+| Event intake | optional `KEEPERHUB_EVENTS_SECRET`, `LEGACYKEEPER_KEEPERHUB_EVENT_URL` |
+
+Never expose KeeperHub keys, database URLs, Telegram tokens, webhook secrets,
+session secrets, or private keys through a `NEXT_PUBLIC_` variable.
+
+## Deployment
+
+### Contracts and workflows
+
+```bash
+npm run deploy:sepolia
+# Add the printed NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS to .env
+npm run workflows:deploy -- --wallet-scoped --enable
+```
+
+Enabling workflows changes remote KeeperHub state. Review their exported JSON
+before doing so.
+
+### Database and Telegram webhook
+
+```bash
+npm --prefix dashboard run db:migrate
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -d "url=${NEXT_PUBLIC_APP_URL}/api/telegram/webhook" \
+  -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
+```
+
+Use independent high-entropy values for `TELEGRAM_ACTION_SECRET` and
+`TELEGRAM_SESSION_SECRET`; the session secret must be at least 32 bytes.
+
+### Vercel
+
+Configure the production environment variables, then deploy from `dashboard/`
+or with the repository's existing Vercel project link. The live deployment is
+`https://legacy-keeper-seven.vercel.app`.
 
 ## Verification
 
-`loop/guardrails/verify.sh` has the final say on whether this project is done.
-
-| Gate | Checks |
-|------|--------|
-| G1 | Contracts compile |
-| G2 | 36 contract tests |
-| G9 | 51 agent tests against a local fake KeeperHub |
-| G6, G7 | Agent and dashboard typecheck; dashboard has 15 focused tests |
-| G3 | No fabricated success values or stub modules |
-| G8 | A module naming an API actually calls it |
-| G4 | No direct-RPC transaction sends |
-| G5 | No secret material in tracked files |
-
-G3 and G8 exist because an earlier version of this project shipped a hardcoded transaction hash and a Telegram bot with zero network calls. The gates now fail on both.
-
----
-
-## For KeeperHub builders
-
-Building this surfaced eight reproducible issues, written up with repros in [`reports/friction-log.md`](reports/friction-log.md). The three that will cost you the most time:
-
-1. **Reusing an `idempotency_key` across retries makes recovery impossible.** KeeperHub caches outcomes including failures and replays them. Scope the key per attempt.
-2. **`chain_id`, `function_args` and `gas_limit_multiplier` are string-typed** despite the schema implying otherwise.
-3. **`status: "completed"` means settled, not successful.** Read `result.success`.
-
-Platform coverage and what we could not use: [`reports/keeperhub-coverage.md`](reports/keeperhub-coverage.md). Threat model: [`reports/threat-model.md`](reports/threat-model.md).
-
----
-
-## Project structure
-
-```text
-contracts/                 LegacyKeeper contract
-agent/                     fail-closed KeeperHub executor, verifier, ledger, payments
-bot/                       Telegram command surface
-dashboard/                 Next.js action and evidence interface
-workflows/                 source definitions, live exports, deployment manifest
-scripts/workflows/         workflow lifecycle and reproducible heartbeat runner
-starter/                   clean-clone setup script and tutorial
-reports/                   live workflow, paid rail, coverage, and friction evidence
-test/                      Hardhat and agent reliability suites
-verify.sh                  public verification entry point
+```bash
+./verify.sh
+npm test
+npm run test:agent
+npm run test:dashboard
+npm --prefix dashboard run typecheck
+npm --prefix dashboard run build
+npm --prefix dashboard run test:e2e
 ```
 
----
+The Phase 7 browser gate is:
+
+```bash
+npm --prefix dashboard run test:e2e -- e2e/ui-polish.spec.ts
+```
+
+The current verified local baseline passes 53 contract tests, 78
+KeeperHub-agent tests, 176 dashboard tests, and the optimized Next.js build.
+`./verify.sh` is the public repository gate; live-chain claims are checked
+separately against Sepolia.
+
+## Troubleshooting
+
+- **Wrong network after the header says Sepolia:** verify the wallet provider's
+  actual `eth_chainId`, then use the small Sepolia switch beside Connect.
+- **Check-in disabled:** the plan must be active, owner-connected, on Sepolia,
+  unsettled, and outside the 24-hour cooldown.
+- **KeeperHub accepted but UI reports failure:** acceptance is not proof. Inspect
+  execution result, receipt, expected event, and resulting state.
+- **Retry repeats a failure:** reuse an idempotency key only while the outcome is
+  unknown. After a confirmed terminal failure, create a new per-attempt key.
+- **Telegram appears disconnected after deployment:** use Manage existing link
+  once to create the server wallet session; subsequent tabs and deployments use
+  the signed HttpOnly cookie until expiry.
+- **Telegram webhook is silent:** confirm the HTTPS URL, secret token, bot token,
+  and that the chat is private.
+- **Activity is empty:** confirm `DATABASE_URL`, migration state, normalized owner
+  address, and that verified routes can write `activity_entries`.
+
+## Project Structure
+
+```text
+contracts/                 factory and per-wallet plan contracts
+dashboard/app/             public page, application routes, and server APIs
+dashboard/components/      landing, shell, onboarding, settings, Telegram UI
+dashboard/db/              Drizzle schema and migrations
+dashboard/e2e/             wallet, Telegram, and Phase 7 browser journeys
+dashboard/lib/             signing, verification, activity, Telegram services
+agent/                     fail-closed KeeperHub MCP executor and audit ledger
+workflows/                 reproducible definitions and stored platform exports
+scripts/                   deployment, workflow lifecycle, smoke and backfill tools
+reports/                   historical live evidence, limitations, and threat model
+```
+
+## Further documentation
+
+- [Clean-clone and production tutorial](starter/docs/tutorial.md)
+- [Threat model](reports/threat-model.md)
+- [KeeperHub platform coverage](reports/keeperhub-coverage.md)
+- [KeeperHub friction reports](reports/friction-log.md)
 
 ## License
 

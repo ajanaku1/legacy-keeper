@@ -1,8 +1,8 @@
 # KeeperHub friction log
 
-Running notes from building LegacyKeeper, captured as they happen. Entries that
-firm up into reproducible issues get filed upstream (see `plan.md` for the
-posting checkpoint). Raw notes here are cheap; reconstructing them later is not.
+Running notes from building LegacyKeeper, captured as they happened. Entries
+that became reproducible issues were filed upstream. Raw notes here preserve
+the sponsor-integration evidence behind those reports.
 
 ## Index, ranked by what it costs a new builder
 
@@ -26,7 +26,7 @@ Entries below are in the order they were discovered, not ranked order.
 <a id="01"></a>
 ## 01 · Where gas sponsorship applies is ambiguous
 
-**Status:** RESOLVED empirically — sponsorship works on Sepolia.
+**Status:** RESOLVED empirically. Sponsorship works on Sepolia.
 
 A real `execute_contract_call` on Sepolia returned `"sponsored": true` with
 `estimatedCostUsd: null`
@@ -46,12 +46,12 @@ networks including Sepolia.
 ---
 
 <a id="05"></a>
-## 05 · `gas_limit_multiplier` is clamped — you cannot underprice into a stuck tx
+## 05 · `gas_limit_multiplier` is clamped, so you cannot underprice into a stuck tx
 
 **Status:** confirmed. Positive finding, worth documenting as a feature.
 
 Attempting to induce a stuck transaction by starving gas failed at every level
-tried — `0.3`, then `0.02`. All landed successfully. KeeperHub appears to floor
+tried: `0.3`, then `0.02`. All landed successfully. KeeperHub appears to floor
 the multiplier at whatever its estimator considers safe.
 
 This is exactly the "transactions execute instead of getting stuck" promise,
@@ -71,8 +71,8 @@ exercise our retry path.
 
 **Filed upstream:** [KeeperHub/keeperhub#1840](https://github.com/KeeperHub/keeperhub/issues/1840)
 
-`execute_contract_call` accepts an `idempotency_key`. The obvious reading —
-"one key per logical action, so retries cannot double-submit" — produces an
+`execute_contract_call` accepts an `idempotency_key`. The obvious reading,
+"one key per logical action, so retries cannot double-submit," produces an
 agent that **can never recover from a failure**.
 
 Observed: a keeper fired `executeInheritance()` slightly before its grace
@@ -90,14 +90,14 @@ The retries never re-executed. KeeperHub replayed the cached outcome, so the
 agent concluded the estate could not be distributed when in fact it could.
 
 **Why this is dangerous:** it fails in the direction of inaction on an
-irreversible, time-critical action, and it is invisible — the agent gets a
-plausible, contract-shaped error message rather than a cache-hit signal.
+irreversible, time-critical action, and it is invisible. The agent gets a
+plausible, contract-shaped error message instead of a cache-hit signal.
 Nothing in the response distinguishes a fresh revert from a replayed one.
 
 **Fix we adopted:** scope the key per *attempt*
 (`${executionKey}-a${attempt}`). Transport-level duplicates of a single
 attempt are still deduplicated, and the contract's own executed flags remain
-the real guard against double distribution — which is where that guarantee
+the real guard against double distribution. That is where the guarantee
 belongs anyway.
 
 **Suggested fix upstream:** document that the key caches outcomes including
@@ -115,7 +115,7 @@ suggests safety while the behaviour introduces a liveness bug.
 `get_direct_execution_status` returns `status: "completed"` for a settled
 execution, with success or failure carried separately in `result.success` and
 `result.reverted`. A poller that treats `"completed"` as terminal-and-successful
-is wrong, and one that omits it from its terminal set — as ours initially did —
+is wrong. A poller that omits it from its terminal set, as ours initially did,
 waits out its entire timeout on a transaction that already landed, then reports
 failure for a success.
 
@@ -138,8 +138,8 @@ Adjacent to upstream [#1784](https://github.com/KeeperHub/keeperhub/issues/1784)
 **Filed upstream:** [KeeperHub/keeperhub#1841](https://github.com/KeeperHub/keeperhub/issues/1841)
 
 `tools/list` advertises `execute_contract_call` with properties
-`chain_id` and `function_args`. The natural encoding — a numeric chain id and
-a real JSON array of arguments — is rejected:
+`chain_id` and `function_args`. The natural encoding, a numeric chain id and
+a real JSON array of arguments, is rejected:
 
 ```
 MCP error -32602: Input validation error:
@@ -183,9 +183,9 @@ hint: Send `notifications/initialized` after `initialize` and BEFORE any
       `tools/list` or `tools/call`. These must be sequential, not parallel.
 ```
 
-The hint is genuinely good — better than most error messages. Two things still
+The hint is better than most error messages. Two things still
 cost time: the session id arrives in the `Mcp-Session-Id` **response header**
-rather than the body, which is easy to miss when hand-rolling a client; and
+instead of the body, which is easy to miss when hand-rolling a client; and
 responses may come back either as plain JSON or as a single SSE `data:` frame
 depending on the call, so a naive `JSON.parse` fails intermittently.
 
@@ -197,7 +197,7 @@ that responses can be SSE-framed.
 <a id="02"></a>
 ## 02 · The workflow schema exists but is undiscoverable from the docs
 
-**Status:** CORRECTED. My earlier claim — that no schema existed — was wrong.
+**Status:** CORRECTED. My earlier claim that no schema existed was wrong.
 
 `list_action_schemas` returns a complete `workflowStructure` (react-flow shaped
 `nodes[]` + `edges[]`), the full `templateSyntax` for cross-node references
@@ -236,7 +236,7 @@ creating and deleting real objects.
 
 **Suggested fix:** accept `nodes`/`edges` directly as an alternative to
 `workflowId`, so a definition can be checked before it is persisted. This
-matters most for exactly the audience the onboarding bounty targets — someone
+matters most for the audience the onboarding bounty targets: someone
 authoring their first workflow in code, who will get it wrong several times.
 
 ---
@@ -268,7 +268,7 @@ sponsorship but not routing:
 
 ```jsonc
 {
-  "sponsored": true,        // observable — we can prove this
+  "sponsored": true,        // observable and provable
   "retryCount": 0,          // observable
   // no route / private / mempool field anywhere
 }
@@ -283,9 +283,9 @@ funds are moving, race me". Private routing is the difference between an
 evacuation and a front-run evacuation. We built an explicit route policy that
 requests it for evacuation and sponsorship for liveness, and we cannot verify
 the request was honoured. Our UI therefore says "private routing requested",
-never "used" — the only honest wording available.
+never "used." That is the only honest wording available.
 
-Sepolia may simply have no private route, since private relays are mainnet
+Sepolia may have no private route because private relays are mainnet
 infrastructure. That would be a reasonable answer, but nothing in the API or
 docs says so, and "when private routes are available" leaves a builder unable
 to determine availability for their chain.
@@ -297,7 +297,7 @@ to determine availability for their chain.
    feature demonstrable.
 2. Document which chains have private routes available.
 3. Allow the route to be requested explicitly, and report when a request could
-   not be honoured, rather than silently falling back to the public mempool.
+   not be honoured instead of silently falling back to the public mempool.
 
 **Open question for the team:** is private routing applied automatically on
 eligible chains, is it an organisation-level setting, and is Sepolia eligible?
@@ -321,10 +321,10 @@ an address we have never interacted with.
 
 So the rail works and the listing runs, but a buyer cannot ask it about their
 own contract. As a marketplace primitive that is a significant limit: the
-listings we browsed are demonstrations of a workflow rather than services you
+listings we browsed are workflow demonstrations, not services you
 can point at your own state. `search_workflows` does return an `inputSchema`
 per listing, so the mechanism for parameterised listings appears to exist and
-simply is not used by the listings currently published.
+is not used by the listings currently published.
 
 **What we did instead:** kept the payment as proof the x402 path works, and
 stopped claiming it verifies our allowance, because it does not. The honest

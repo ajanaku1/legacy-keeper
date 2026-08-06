@@ -1,5 +1,10 @@
 # LegacyKeeper judging baseline
 
+> Historical snapshot: this file preserves the 2026-08-01 pre-hardening score
+> and must not be read as current product status. See [`README.md`](../README.md)
+> for the active wallet-scoped application, Telegram service, and production
+> evidence.
+
 Captured on 2026-08-01 before submission hardening. This is a truth baseline,
 not a forecast of the final score.
 
@@ -16,8 +21,8 @@ not a forecast of the final score.
 The evidence ladder is strict: **discovered → configured → enabled → triggered →
 settled → verified**. A higher label includes the lower steps, but an artifact at
 one step never proves the next. In particular, an exported workflow with
-`enabled: false` is configured—not live—and a KeeperHub `completed` status is
-settled—not necessarily successful or independently verified.
+`enabled: false` is configured but not live. A KeeperHub `completed` status is
+settled but not necessarily successful or independently verified.
 
 ## Preserved proof
 

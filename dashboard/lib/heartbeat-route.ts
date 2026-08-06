@@ -1,4 +1,22 @@
+import type { Address } from "viem";
+import { ActionError, withActionEvidence } from "./action-error";
+import { HEARTBEAT_COOLDOWN_SECONDS } from "./heartbeat-policy";
+import {
+  assertSepolia,
+  assertSettlement,
+  assertSigner,
+  assertSigningDeadline,
+  exactObject,
+  requiredAddress,
+  requiredInteger,
+  requiredString,
+  sameAddress,
+} from "./action-validation";
+
 export interface HeartbeatRequest {
+  chainId: number;
+  owner: Address;
+  plan: Address;
   nonce: string;
   deadline: string;
   signature: string;
@@ -16,118 +34,159 @@ export interface KeeperHubSettlement {
 
 export interface HeartbeatVerification {
   receiptStatus: string;
+  target?: Address;
   event?: string;
   lastHeartbeat: bigint;
 }
 
 export interface HeartbeatDependencies {
   nowSeconds: () => number;
-  readOwner: () => Promise<string>;
-  readLastHeartbeat: () => Promise<bigint>;
-  recoverSigner: (request: HeartbeatRequest) => Promise<string>;
-  submitToKeeperHub: (request: HeartbeatRequest) => Promise<KeeperHubSubmission>;
+  readRegisteredPlan: (owner: Address) => Promise<Address>;
+  readOwner: (plan: Address) => Promise<Address>;
+  readLastHeartbeat: (plan: Address) => Promise<bigint>;
+  recoverSigner: (request: HeartbeatRequest) => Promise<Address>;
+  nextIdempotencyKey: () => string;
+  submitToKeeperHub: (
+    request: HeartbeatRequest,
+    idempotencyKey: string,
+  ) => Promise<KeeperHubSubmission>;
   awaitSettlement: (executionId: string) => Promise<KeeperHubSettlement>;
   verifyOnchain: (
+    plan: Address,
     txHash: `0x${string}`,
-    previousHeartbeat: bigint
+    previousHeartbeat: bigint,
   ) => Promise<HeartbeatVerification>;
 }
 
 export interface VerifiedHeartbeatEvidence {
-  stage: 'verified';
+  stage: "verified";
   executionId: string;
+  idempotencyKey: string;
   txHash: `0x${string}`;
   sponsored: true;
-  receiptStatus: 'success';
-  event: 'HeartbeatRecorded';
+  receiptStatus: "success";
+  event: "HeartbeatRecorded";
+  plan: Address;
   lastHeartbeat: string;
-  routeConfidence: 'unavailable';
+  routeConfidence: "unavailable";
 }
 
-const REQUEST_FIELDS = ['deadline', 'nonce', 'signature'];
-const MAX_DEADLINE_SECONDS = 600;
+const REQUEST_FIELDS = [
+  "chainId",
+  "owner",
+  "plan",
+  "nonce",
+  "deadline",
+  "signature",
+] as const;
 
 export function parseHeartbeatRequest(value: unknown): HeartbeatRequest {
-  if (!isObject(value)) throw new Error('Heartbeat request must be an object');
-  const keys = Object.keys(value).sort();
-  const unexpected = keys.find((key) => !REQUEST_FIELDS.includes(key));
-  if (unexpected) throw new Error(`Unexpected field: ${unexpected}`);
-  if (keys.length !== REQUEST_FIELDS.length) {
-    throw new Error('Heartbeat request requires nonce, deadline, and signature');
-  }
-
+  const request = exactObject(value, REQUEST_FIELDS, "Heartbeat request");
   return {
-    nonce: requiredString(value, 'nonce'),
-    deadline: requiredString(value, 'deadline'),
-    signature: requiredString(value, 'signature'),
+    chainId: requiredInteger(request.chainId, "chainId"),
+    owner: requiredAddress(request.owner, "owner"),
+    plan: requiredAddress(request.plan, "plan"),
+    nonce: requiredString(request.nonce, "nonce"),
+    deadline: requiredString(request.deadline, "deadline"),
+    signature: requiredString(request.signature, "signature"),
   };
 }
 
 export async function executeSignedHeartbeat(
   rawRequest: HeartbeatRequest,
-  dependencies: HeartbeatDependencies
+  dependencies: HeartbeatDependencies,
 ): Promise<VerifiedHeartbeatEvidence> {
   const request = parseHeartbeatRequest(rawRequest);
-  assertDeadline(request.deadline, dependencies.nowSeconds());
-
-  const owner = await dependencies.readOwner();
-  const signer = await dependencies.recoverSigner(request);
-  if (signer.toLowerCase() !== owner.toLowerCase()) {
-    throw new Error('Heartbeat signature does not match the onchain owner');
+  const nowSeconds = dependencies.nowSeconds();
+  assertSepolia(request.chainId);
+  assertSigningDeadline(request.deadline, nowSeconds);
+  const registeredPlan = await dependencies.readRegisteredPlan(request.owner);
+  if (!sameAddress(registeredPlan, request.plan)) {
+    throw new ActionError(
+      "PLAN_MISMATCH",
+      "Factory registry does not match this plan.",
+    );
   }
-
-  const previousHeartbeat = await dependencies.readLastHeartbeat();
-  const submission = await dependencies.submitToKeeperHub(request);
-  if (!submission.executionId) throw new Error('KeeperHub returned no execution ID');
-  const settlement = await dependencies.awaitSettlement(submission.executionId);
-  if (settlement.status !== 'success') {
-    throw new Error(`KeeperHub execution did not settle successfully: ${settlement.status}`);
+  const owner = await dependencies.readOwner(request.plan);
+  if (!sameAddress(owner, request.owner)) {
+    throw new ActionError(
+      "WRONG_OWNER",
+      "The connected wallet does not own this plan.",
+    );
   }
-  if (!settlement.txHash) throw new Error('KeeperHub settlement returned no transaction hash');
-  if (settlement.sponsored !== true) {
-    throw new Error('KeeperHub did not confirm sponsorship');
-  }
-
-  const verified = await dependencies.verifyOnchain(
-    settlement.txHash,
-    previousHeartbeat
+  assertSigner(await dependencies.recoverSigner(request), owner);
+  const previousHeartbeat = await dependencies.readLastHeartbeat(request.plan);
+  assertHeartbeatCooldown(previousHeartbeat, nowSeconds);
+  const idempotencyKey = dependencies.nextIdempotencyKey();
+  const submission = await dependencies.submitToKeeperHub(
+    request,
+    idempotencyKey,
   );
-  if (verified.receiptStatus !== 'success') throw new Error('Transaction receipt failed');
-  if (verified.event !== 'HeartbeatRecorded') {
-    throw new Error('Expected HeartbeatRecorded event is missing');
+  if (!submission.executionId) {
+    throw new ActionError(
+      "KEEPERHUB_REJECTED",
+      "KeeperHub returned no execution ID.",
+    );
   }
-  if (verified.lastHeartbeat <= previousHeartbeat) {
-    throw new Error('Onchain lastHeartbeat did not advance');
-  }
-
+  const executionEvidence = { executionId: submission.executionId };
+  const settlement = await withActionEvidence(executionEvidence, async () => {
+    const result = await dependencies.awaitSettlement(submission.executionId);
+    assertSettlement(result);
+    return result;
+  });
+  const verified = await withActionEvidence(
+    { ...executionEvidence, txHash: settlement.txHash },
+    async () => {
+      const result = await dependencies.verifyOnchain(
+        request.plan,
+        settlement.txHash,
+        previousHeartbeat,
+      );
+      assertHeartbeatProof(result, request.plan, previousHeartbeat);
+      return result;
+    },
+  );
   return {
-    stage: 'verified',
+    stage: "verified",
     executionId: submission.executionId,
+    idempotencyKey,
     txHash: settlement.txHash,
     sponsored: true,
-    receiptStatus: 'success',
-    event: 'HeartbeatRecorded',
+    receiptStatus: "success",
+    event: "HeartbeatRecorded",
+    plan: request.plan,
     lastHeartbeat: verified.lastHeartbeat.toString(),
-    routeConfidence: 'unavailable',
+    routeConfidence: "unavailable",
   };
 }
 
-function assertDeadline(rawDeadline: string, nowSeconds: number): void {
-  const deadline = Number(rawDeadline);
-  if (!Number.isSafeInteger(deadline)) throw new Error('Heartbeat deadline is invalid');
-  if (deadline <= nowSeconds || deadline > nowSeconds + MAX_DEADLINE_SECONDS) {
-    throw new Error('Heartbeat deadline must be short-lived and in the future');
+function assertHeartbeatCooldown(
+  previousHeartbeat: bigint,
+  nowSeconds: number,
+): void {
+  const nextHeartbeat = previousHeartbeat + BigInt(HEARTBEAT_COOLDOWN_SECONDS);
+  if (previousHeartbeat > 0n && BigInt(nowSeconds) < nextHeartbeat) {
+    throw new ActionError(
+      "HEARTBEAT_COOLDOWN",
+      "A plan can check in only once during each rolling 24-hour window.",
+    );
   }
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requiredString(value: Record<string, unknown>, field: string): string {
-  const result = value[field];
-  if (typeof result !== 'string' || result.length === 0) {
-    throw new Error(`Heartbeat ${field} must be a non-empty string`);
+function assertHeartbeatProof(
+  proof: HeartbeatVerification,
+  plan: Address,
+  previousHeartbeat: bigint,
+): void {
+  if (
+    proof.receiptStatus !== "success" ||
+    !sameAddress(proof.target, plan) ||
+    proof.event !== "HeartbeatRecorded" ||
+    proof.lastHeartbeat <= previousHeartbeat
+  ) {
+    throw new ActionError(
+      "UNVERIFIED_RESULT",
+      "Receipt, heartbeat event, target, and resulting state did not agree.",
+    );
   }
-  return result;
 }

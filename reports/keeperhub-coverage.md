@@ -1,5 +1,10 @@
 # KeeperHub coverage matrix
 
+> Historical sponsor-evidence snapshot: this inventory records the 2026-08-02
+> pre-wallet-scoped system. The current product uses four enabled wallet-scoped
+> workflows and keeps Telegram identity and delivery in LegacyKeeper. See
+> [`README.md`](../README.md) for current status.
+
 Refreshed from authenticated aggregate MCP and repository evidence on
 2026-08-02. Status follows the evidence ladder in
 [`judging-baseline.md`](judging-baseline.md): **Discovered → Configured →

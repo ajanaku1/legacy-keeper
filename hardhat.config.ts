@@ -1,6 +1,22 @@
-import { HardhatUserConfig } from 'hardhat/config';
+import { HardhatUserConfig, subtask } from 'hardhat/config';
+import { TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD } from 'hardhat/builtin-tasks/task-names';
 import '@nomicfoundation/hardhat-toolbox';
 import 'dotenv/config';
+
+subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD).setAction(
+  async ({ solcVersion }, _environment, runSuper) => {
+    if (solcVersion !== '0.8.24') {
+      return runSuper();
+    }
+
+    return {
+      compilerPath: require.resolve('solc/soljson.js'),
+      isSolcJs: true,
+      version: '0.8.24',
+      longVersion: '0.8.24+commit.e11b9ed9',
+    };
+  }
+);
 
 // Sepolia is the proving ground. Mainnet is gated behind an explicit
 // go-ahead (plan.md) and is deliberately not configured here yet.

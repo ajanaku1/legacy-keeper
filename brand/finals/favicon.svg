@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="LegacyKeeper">
-  <path fill="#031B13" fill-opacity=".68" d="M0 0h512v512H0z"/>
-  <path fill="#020A07" d="m240 64-168 64 24 184 144 136V320l-56-56-8-88 64-24V64Z"/>
-  <path fill="#043D2B" d="m272 64 168 64-24 184-144 136V320l56-56 8-88-64-24V64Z"/>
-  <path fill="#06B171" d="m112 152 96-36v40l-56 20 8 104 48 48v56l-80-80-16-152Z"/>
-  <path fill="#09FD67" d="M224 216h64v64h-64z"/>
-</svg>

@@ -1,7 +1,7 @@
 {
   "id": "pm22qhfnox30w0mnngw01",
   "name": "LegacyKeeper — Panic Evacuation",
-  "description": "Authenticated panic path. Accepts a recovery-key signature from the dashboard or bot and sweeps assets to the safe vault. The owner key is never involved.",
+  "description": "Re-resolves the owner plan before relaying its signed action.",
   "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
   "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
   "isAnonymous": false,
@@ -19,7 +19,7 @@
         "label": "Panic Webhook",
         "config": {
           "triggerType": "Webhook",
-          "webhookSchema": "{\"type\":\"object\",\"required\":[\"nonce\",\"deadline\",\"signature\"],\"properties\":{\"nonce\":{\"type\":\"string\"},\"deadline\":{\"type\":\"string\"},\"signature\":{\"type\":\"string\"}}}"
+          "webhookSchema": "{\"type\":\"object\",\"required\":[\"owner\",\"plan\",\"functionArgs\"],\"properties\":{\"owner\":{\"type\":\"string\"},\"plan\":{\"type\":\"string\"},\"functionArgs\":{\"type\":\"string\"}},\"additionalProperties\":false}"
         },
         "status": "idle"
       },
@@ -30,17 +30,17 @@
       }
     },
     {
-      "id": "evacuate",
+      "id": "resolve-plan",
       "data": {
         "type": "action",
-        "label": "Evacuate To Vault",
+        "label": "Resolve Owner Plan",
         "config": {
-          "abi": "[{\"name\":\"evacuate\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "abi": "[{\"name\":\"planOf\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"}],\"outputs\":[{\"name\":\"plan\",\"type\":\"address\"}]}]",
           "network": "11155111",
-          "actionType": "web3/write-contract",
-          "abiFunction": "evacuate",
-          "functionArgs": "[\"{{@trigger-1:Panic Webhook.nonce}}\",\"{{@trigger-1:Panic Webhook.deadline}}\",\"{{@trigger-1:Panic Webhook.signature}}\"]",
-          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+          "actionType": "web3/read-contract",
+          "abiFunction": "planOf",
+          "functionArgs": "[\"{{@trigger-1:Panic Webhook.owner}}\"]",
+          "contractAddress": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576"
         },
         "status": "idle"
       },
@@ -51,15 +51,13 @@
       }
     },
     {
-      "id": "notify",
+      "id": "plan-matches",
       "data": {
         "type": "action",
-        "label": "Confirm Evacuation",
+        "label": "Registered Plan?",
         "config": {
-          "chatId": "835617357",
-          "message": "LegacyKeeper: EVACUATION EXECUTED. tx {{@evacuate:Evacuate To Vault.transactionHash}}",
-          "actionType": "telegram/send-message",
-          "integrationId": "zjnwqnhvy2gyp7irddiuv"
+          "condition": "{{@resolve-plan:Resolve Owner Plan.result.plan}} === {{@trigger-1:Panic Webhook.plan}}",
+          "actionType": "Condition"
         },
         "status": "idle"
       },
@@ -68,25 +66,52 @@
         "x": 504,
         "y": 0
       }
+    },
+    {
+      "id": "signed-write",
+      "data": {
+        "type": "action",
+        "label": "Evacuate To Vault",
+        "config": {
+          "abi": "[{\"name\":\"evacuate\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "evacuate",
+          "functionArgs": "{{@trigger-1:Panic Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Panic Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
+        "y": 0
+      }
     }
   ],
   "edges": [
     {
-      "id": "trigger-1->evacuate",
+      "id": "trigger-1->resolve-plan",
       "source": "trigger-1",
-      "target": "evacuate"
+      "target": "resolve-plan"
     },
     {
-      "id": "evacuate->notify",
-      "source": "evacuate",
-      "target": "notify"
+      "id": "resolve-plan->plan-matches",
+      "source": "resolve-plan",
+      "target": "plan-matches"
+    },
+    {
+      "id": "plan-matches->signed-write:true",
+      "source": "plan-matches",
+      "target": "signed-write",
+      "sourceHandle": "true"
     }
   ],
   "visibility": "private",
   "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:09.239Z",
-  "updatedAt": "2026-08-02T00:24:00.970Z",
+  "updatedAt": "2026-08-06T10:30:49.948Z",
   "seededAt": null,
   "isListed": false,
   "listedSlug": null,

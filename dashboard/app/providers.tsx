@@ -1,32 +1,28 @@
-'use client';
+"use client";
 
-import { WagmiProvider, createConfig, http, injected } from 'wagmi';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
-import { SEPOLIA_RPC_URL } from '@/lib/contract';
-import { sepolia } from '@/lib/sepolia';
+import { WagmiProvider, type State } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
+import { wagmiConfig } from "@/lib/wagmi-config";
 
-const config = createConfig({
-  chains: [sepolia],
-  connectors: [injected()],
-  transports: {
-    // Falls back to a public endpoint so the dashboard still renders when no
-    // private RPC is configured — reads are cheap and non-sensitive.
-    [sepolia.id]: http(SEPOLIA_RPC_URL || undefined),
-  },
-  ssr: true,
-});
-
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({
+  children,
+  initialState,
+}: {
+  children: React.ReactNode;
+  initialState?: State;
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        defaultOptions: { queries: { refetchInterval: 15_000, staleTime: 10_000 } },
-      })
+        defaultOptions: {
+          queries: { refetchInterval: 15_000, staleTime: 10_000 },
+        },
+      }),
   );
 
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig} initialState={initialState}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </WagmiProvider>
   );

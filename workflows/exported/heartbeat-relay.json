@@ -1,7 +1,7 @@
 {
   "id": "ryd34r3ayrg2u8o29fmrk",
   "name": "LegacyKeeper — Heartbeat Relay",
-  "description": "Relays an owner-signed EIP-712 heartbeat so proving liveness never requires the owner to hold gas.",
+  "description": "Re-resolves the owner plan before relaying its signed action.",
   "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
   "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
   "isAnonymous": false,
@@ -18,7 +18,8 @@
         "type": "trigger",
         "label": "Heartbeat Webhook",
         "config": {
-          "triggerType": "Webhook"
+          "triggerType": "Webhook",
+          "webhookSchema": "{\"type\":\"object\",\"required\":[\"owner\",\"plan\",\"functionArgs\"],\"properties\":{\"owner\":{\"type\":\"string\"},\"plan\":{\"type\":\"string\"},\"functionArgs\":{\"type\":\"string\"}},\"additionalProperties\":false}"
         },
         "status": "idle"
       },
@@ -29,17 +30,17 @@
       }
     },
     {
-      "id": "relay",
+      "id": "resolve-plan",
       "data": {
         "type": "action",
-        "label": "Relay Heartbeat",
+        "label": "Resolve Owner Plan",
         "config": {
-          "abi": "[{\"name\":\"heartbeatBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "abi": "[{\"name\":\"planOf\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"}],\"outputs\":[{\"name\":\"plan\",\"type\":\"address\"}]}]",
           "network": "11155111",
-          "actionType": "web3/write-contract",
-          "abiFunction": "heartbeatBySig",
-          "functionArgs": "[\"{{@trigger-1:Heartbeat Webhook.nonce}}\",\"{{@trigger-1:Heartbeat Webhook.deadline}}\",\"{{@trigger-1:Heartbeat Webhook.signature}}\"]",
-          "contractAddress": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA"
+          "actionType": "web3/read-contract",
+          "abiFunction": "planOf",
+          "functionArgs": "[\"{{@trigger-1:Heartbeat Webhook.owner}}\"]",
+          "contractAddress": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576"
         },
         "status": "idle"
       },
@@ -48,20 +49,69 @@
         "x": 252,
         "y": 0
       }
+    },
+    {
+      "id": "plan-matches",
+      "data": {
+        "type": "action",
+        "label": "Registered Plan?",
+        "config": {
+          "condition": "{{@resolve-plan:Resolve Owner Plan.result.plan}} === {{@trigger-1:Heartbeat Webhook.plan}}",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 504,
+        "y": 0
+      }
+    },
+    {
+      "id": "signed-write",
+      "data": {
+        "type": "action",
+        "label": "Relay Heartbeat",
+        "config": {
+          "abi": "[{\"name\":\"heartbeatBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "heartbeatBySig",
+          "functionArgs": "{{@trigger-1:Heartbeat Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Heartbeat Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
+        "y": 0
+      }
     }
   ],
   "edges": [
     {
-      "id": "trigger-1->relay",
+      "id": "trigger-1->resolve-plan",
       "source": "trigger-1",
-      "target": "relay"
+      "target": "resolve-plan"
+    },
+    {
+      "id": "resolve-plan->plan-matches",
+      "source": "resolve-plan",
+      "target": "plan-matches"
+    },
+    {
+      "id": "plan-matches->signed-write:true",
+      "source": "plan-matches",
+      "target": "signed-write",
+      "sourceHandle": "true"
     }
   ],
   "visibility": "private",
   "enabled": true,
   "sourceWorkflowId": null,
   "createdAt": "2026-07-27T23:12:10.071Z",
-  "updatedAt": "2026-08-02T00:24:01.558Z",
+  "updatedAt": "2026-08-06T10:30:49.076Z",
   "seededAt": null,
   "isListed": false,
   "listedSlug": null,

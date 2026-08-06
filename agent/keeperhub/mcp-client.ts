@@ -24,15 +24,20 @@ export interface McpToolDefinition {
 }
 
 type JsonObject = Record<string, unknown>;
+export type IdempotencyRetry = "none" | "reuse" | "rotate";
 
 export class McpError extends Error {
+  readonly retryKey: IdempotencyRetry;
+
   constructor(
     message: string,
     readonly code?: number,
     readonly retryable = false,
+    retryKey?: IdempotencyRetry,
   ) {
     super(message);
     this.name = "McpError";
+    this.retryKey = retryKey ?? (retryable ? "reuse" : "none");
   }
 }
 
@@ -132,9 +137,7 @@ export class McpClient {
       .map((c) => c.text ?? "")
       .join("\n");
 
-    if (result?.isError) {
-      throw new McpError(`tool ${name} failed: ${text}`, undefined, false);
-    }
+    if (result?.isError) throw toolFailure(name, text);
     return text;
   }
 
@@ -230,11 +233,12 @@ export class McpClient {
     // 202 Accepted with an empty body is the correct reply to a notification.
     const raw = await response.text();
     if (!response.ok) {
-      const retryable = response.status === 429 || response.status >= 500;
+      const retryKey = httpRetryKey(response.status, raw);
       throw new McpError(
         `HTTP ${response.status}: ${raw.slice(0, 200) || response.statusText}`,
         response.status,
-        retryable,
+        retryKey !== "none",
+        retryKey,
       );
     }
     if (!raw.trim()) return { response, body: null };
@@ -257,8 +261,46 @@ function parseMaybeSse(raw: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    throw new McpError(`unparseable response: ${raw.slice(0, 200)}`);
+    throw new McpError(
+      `unparseable response: ${raw.slice(0, 200)}`,
+      undefined,
+      true,
+      "reuse",
+    );
   }
+}
+
+function toolFailure(name: string, text: string): McpError {
+  const retryKey = toolFailureRetryKey(text);
+  return new McpError(
+    `tool ${name} failed: ${text}`,
+    undefined,
+    retryKey !== "none",
+    retryKey,
+  );
+}
+
+function toolFailureRetryKey(text: string): IdempotencyRetry {
+  const failure = text.toLowerCase();
+  if (failure.includes("idempotency_in_progress")) return "reuse";
+  if (/http\s+5\d\d|timed?\s*out|connection|network/.test(failure)) {
+    return "reuse";
+  }
+  if (/contract call failed|revert|["']?cached["']?\s*:\s*true/.test(failure)) {
+    return "rotate";
+  }
+  return "none";
+}
+
+function httpRetryKey(status: number, body: string): IdempotencyRetry {
+  if (
+    status === 409 &&
+    body.toLowerCase().includes("idempotency_in_progress")
+  ) {
+    return "reuse";
+  }
+  if (status === 429 || status >= 500) return "reuse";
+  return "none";
 }
 
 function asObject(value: unknown): JsonObject {

@@ -10,18 +10,9 @@
  * Schemas below were read from the live API via tools/list, not inferred.
  */
 
-import { McpClient, McpError } from '../keeperhub/mcp-client';
-import {
-  AuditLedger,
-  AuditEntry,
-  Outcome,
-  newExecutionKey,
-} from '../audit/ledger';
-import {
-  chooseRoute,
-  confirmRoute,
-  assertRoutesExclusive,
-} from '../keeperhub/route-policy';
+import { McpClient, McpError, type IdempotencyRetry } from '../keeperhub/mcp-client';
+import { AuditLedger, AuditEntry, Outcome, newExecutionKey } from '../audit/ledger';
+import { chooseRoute, confirmRoute, assertRoutesExclusive } from '../keeperhub/route-policy';
 
 export interface ExecutionResult {
   success: boolean;
@@ -76,16 +67,11 @@ export interface ExecutionVerifier {
 // call itself succeeded is a separate `result.success` field. Treating
 // 'completed' as non-terminal makes the poller wait out its whole timeout on
 // a transaction that already landed.
-const TERMINAL_STATUSES = [
-  'completed',
-  'success',
-  'failed',
-  'reverted',
-  'cancelled',
-];
+const TERMINAL_STATUSES = ['completed', 'success', 'failed', 'reverted', 'cancelled'];
 
 interface Settlement {
   outcome: Outcome;
+  retryKey: IdempotencyRetry;
   txHash?: string;
   gasUsed?: string;
   blockNumber?: number;
@@ -101,12 +87,13 @@ type RouteDecision = ReturnType<typeof chooseRoute>;
 interface AttemptResult {
   record: AuditEntry;
   executionId?: string;
-  retryable: boolean;
+  retryKey: IdempotencyRetry;
 }
 
 interface AttemptContext {
   executionKey: string;
   attempt: number;
+  idempotencyAttempt: number;
   functionName: string;
   args: unknown[];
   trigger: TriggerInfo;
@@ -147,10 +134,7 @@ export class KeeperHubExecutor {
   }
 
   /** Distribute one tracked ERC-20, pulled from the owner's wallet. */
-  async executeInheritanceERC20(
-    token: string,
-    trigger: TriggerInfo
-  ): Promise<ExecutionResult> {
+  async executeInheritanceERC20(token: string, trigger: TriggerInfo): Promise<ExecutionResult> {
     return this.contractCall('executeInheritanceERC20', [token], trigger, {});
   }
 
@@ -210,9 +194,9 @@ export class KeeperHubExecutor {
 
   /**
    * One logical action, retried under a shared execution key so the ledger
-   * shows the whole story. `idempotency_key` is passed to KeeperHub so a
-   * retry can never double-submit; the contract's executed flags are the
-   * second line of defence.
+   * shows the whole story. Unknown outcomes reuse the KeeperHub idempotency
+   * key; only confirmed terminal failures rotate it for a fresh attempt. The
+   * contract's executed flags remain the second line of defence.
    */
   private async contractCall(
     functionName: string,
@@ -225,18 +209,27 @@ export class KeeperHubExecutor {
     const routeDecision = chooseRoute(functionName);
     let lastError = '';
     let attemptsMade = 0;
+    let idempotencyAttempt = 1;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       attemptsMade = attempt;
       const result = await this.runAttempt({
-        executionKey, attempt, functionName, args, trigger, options, routeDecision,
+        executionKey,
+        attempt,
+        idempotencyAttempt,
+        functionName,
+        args,
+        trigger,
+        options,
+        routeDecision,
       });
       const { record } = result;
       if (record.outcome === 'success') {
         return successfulResult(executionKey, attempt, result);
       }
       lastError = record.error ?? `execution ${record.outcome}`;
-      if (!result.retryable || attempt === maxAttempts) break;
+      if (result.retryKey === 'none' || attempt === maxAttempts) break;
+      if (result.retryKey === 'rotate') idempotencyAttempt += 1;
       await this.pauseBeforeRetry(functionName, attempt, lastError, options);
     }
 
@@ -251,21 +244,23 @@ export class KeeperHubExecutor {
   private async runAttempt(context: AttemptContext): Promise<AttemptResult> {
     const startedAt = Date.now();
     const record = newAuditRecord(context);
+    let retryKey: IdempotencyRetry = 'reuse';
     try {
       const submission = await this.submit(context);
       record.keeperhubExecutionId = submission.executionId;
       record.simulation = { ok: true, detail: 'accepted by KeeperHub' };
       const settled = await this.awaitSettlement(submission.executionId);
+      retryKey = settled.retryKey;
       this.applySettlement(record, context.routeDecision, settled, submission);
       await this.verifyOnchain(record, context.functionName, context.args);
-      return this.finishAttempt(record, startedAt, submission.executionId, true);
+      return this.finishAttempt(record, startedAt, submission.executionId, retryKey);
     } catch (error) {
       const message = errorMessage(error);
       record.outcome = 'failed';
       record.error = message;
       record.simulation ??= { ok: false, detail: message };
-      const retryable = !(error instanceof McpError) || error.retryable;
-      return this.finishAttempt(record, startedAt, undefined, retryable);
+      const failureRetryKey = error instanceof McpError ? error.retryKey : retryKey;
+      return this.finishAttempt(record, startedAt, undefined, failureRetryKey);
     }
   }
 
@@ -281,13 +276,21 @@ export class KeeperHubExecutor {
   }
 
   private buildPayload(context: AttemptContext): Record<string, unknown> {
-    const { executionKey, attempt, functionName, args, options, routeDecision } = context;
+    const {
+      executionKey,
+      attempt,
+      idempotencyAttempt,
+      functionName,
+      args,
+      options,
+      routeDecision,
+    } = context;
     const payload: Record<string, unknown> = {
       contract_address: this.contractAddress,
       chain_id: String(this.chainId),
       function_name: functionName,
       function_args: JSON.stringify(args),
-      idempotency_key: `${executionKey}-a${attempt}`,
+      idempotency_key: `${executionKey}-a${idempotencyAttempt}`,
       ...routeDecision.payload,
     };
     if (options.gasLimitMultiplier !== undefined && attempt === 1) {
@@ -309,21 +312,20 @@ export class KeeperHubExecutor {
     assertRoutesExclusive(settled);
     const route = confirmRoute(decision, settled);
     record.route = { requested: route.route, confirmed: route.confirmed };
-    record.txHash =
-      settled.txHash ?? firstString(submission.parsed, ['tx_hash', 'txHash']);
+    record.txHash = settled.txHash ?? firstString(submission.parsed, ['tx_hash', 'txHash']);
     record.gasUsed = settled.gasUsed;
     record.blockNumber = settled.blockNumber;
     record.outcome = settled.outcome;
     record.error = settled.error;
   }
 
-  private async verifyOnchain(
-    record: AuditEntry,
-    action: string,
-    args: unknown[]
-  ): Promise<void> {
+  private async verifyOnchain(record: AuditEntry, action: string, args: unknown[]): Promise<void> {
     if (record.outcome !== 'success' || !record.txHash) return;
-    const result = await this.verifier.verify({ action, args, txHash: record.txHash });
+    const result = await this.verifier.verify({
+      action,
+      args,
+      txHash: record.txHash,
+    });
     record.verification = {
       receipt: result.verified,
       event: result.event,
@@ -342,11 +344,11 @@ export class KeeperHubExecutor {
     record: AuditEntry,
     startedAt: number,
     executionId: string | undefined,
-    retryable: boolean
+    retryKey: IdempotencyRetry
   ): AttemptResult {
     record.durationMs = Date.now() - startedAt;
     this.ledger.append(record);
-    return { record, executionId, retryable };
+    return { record, executionId, retryKey };
   }
 
   private async pauseBeforeRetry(
@@ -365,10 +367,7 @@ export class KeeperHubExecutor {
   }
 
   /** Poll until KeeperHub reports a terminal state for this execution. */
-  private async awaitSettlement(
-    executionId: string,
-    timeoutMs = 180_000
-  ): Promise<Settlement> {
+  private async awaitSettlement(executionId: string, timeoutMs = 180_000): Promise<Settlement> {
     const deadline = Date.now() + timeoutMs;
     let delay = 2000;
 
@@ -384,7 +383,11 @@ export class KeeperHubExecutor {
       delay = Math.min(delay * 1.5, 15_000);
     }
 
-    return { outcome: 'timeout', error: `no terminal status in ${timeoutMs}ms` };
+    return {
+      outcome: 'timeout',
+      retryKey: 'reuse',
+      error: `no terminal status in ${timeoutMs}ms`,
+    };
   }
 }
 
@@ -435,13 +438,13 @@ function errorMessage(error: unknown): string {
 function settlementFrom(parsed: JsonObject, status: string): Settlement {
   const inner = objectValue(parsed.result);
   const reverted = firstBoolean(inner, ['reverted']) === true;
-  const explicitSuccess =
-    status === 'success' ||
-    (status === 'completed' && firstBoolean(inner, ['success']) === true);
+  const successFlag = firstBoolean(inner, ['success']);
+  const explicitSuccess = status === 'success' || (status === 'completed' && successFlag === true);
 
-  if (status === 'completed' && !reverted && !explicitSuccess) {
+  if (status === 'completed' && successFlag === undefined && !reverted && !explicitSuccess) {
     return {
       outcome: 'failed',
+      retryKey: 'none',
       error: 'completed settlement has no explicit success signal',
     };
   }
@@ -452,12 +455,16 @@ function settlementFrom(parsed: JsonObject, status: string): Settlement {
   if (explicitSuccess && !txHash) {
     return {
       outcome: 'failed',
+      retryKey: 'none',
       error: 'KeeperHub settlement missing transaction hash',
     };
   }
 
+  const confirmedFailure = reverted || successFlag === false || isFailureStatus(status);
+
   return {
-    outcome: settlementOutcome(explicitSuccess, reverted),
+    outcome: settledOutcome(explicitSuccess, reverted, status),
+    retryKey: confirmedFailure ? 'rotate' : 'none',
     txHash,
     gasUsed:
       firstScalarString(parsed, ['gasUsedWei', 'gas_used']) ??
@@ -466,17 +473,18 @@ function settlementFrom(parsed: JsonObject, status: string): Settlement {
     error:
       firstString(parsed, ['error', 'failure_reason']) ??
       firstString(inner, ['revertReason', 'error']),
-    sponsored:
-      firstBoolean(inner, ['sponsored']) ?? firstBoolean(parsed, ['sponsored']),
-    privateRoute:
-      firstBoolean(inner, ['privateRoute']) ??
-      firstBoolean(parsed, ['privateRoute']),
+    sponsored: firstBoolean(inner, ['sponsored']) ?? firstBoolean(parsed, ['sponsored']),
+    privateRoute: firstBoolean(inner, ['privateRoute']) ?? firstBoolean(parsed, ['privateRoute']),
   };
 }
 
-function settlementOutcome(success: boolean, reverted: boolean): Outcome {
-  if (success) return 'success';
-  if (reverted) return 'reverted';
+function isFailureStatus(status: string): boolean {
+  return ['failed', 'reverted', 'cancelled'].includes(status);
+}
+
+function settledOutcome(explicitSuccess: boolean, reverted: boolean, status: string): Outcome {
+  if (explicitSuccess) return 'success';
+  if (reverted || status === 'reverted') return 'reverted';
   return 'failed';
 }
 
@@ -510,10 +518,7 @@ function firstNumber(object: JsonObject, keys: string[]): number | undefined {
   return undefined;
 }
 
-function firstScalarString(
-  object: JsonObject,
-  keys: string[]
-): string | undefined {
+function firstScalarString(object: JsonObject, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = object[key];
     if (typeof value === 'string' || typeof value === 'number') {

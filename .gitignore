@@ -1,11 +1,15 @@
 node_modules/
 dist/
 build/
+coverage/
 .next/
 .vercel/
 .Codex/
+.codex/
+.claude/
+playwright-report/
+test-results/
 *.tsbuildinfo
-video/out/still-*.png
 
 # hardhat
 artifacts/
@@ -13,6 +17,8 @@ cache/
 typechain-types/
 .env
 .env.local
+.env*
+!.env.example
 .DS_Store
 *.log
 npm-debug.log*
@@ -38,3 +44,24 @@ keeperhub-credentials.json
 Goal.md
 prompt.md
 plan.md
+design.md
+
+# Internal design, agent, and discarded submission work
+/.ai/
+/ai/
+/animation-plans/
+/brand/
+/docs/
+/loop/
+/proposals/
+/video/
+/IMPLEMENTATION.md
+
+# Local dashboard tooling and scratch files
+/dashboard/.agents/
+/dashboard/skills-lock.json
+/dashboard/Untitled
+/dashboard/public/legacykeeper-screenshot.png
+
+# One-time local migration utility; production activity is in PostgreSQL
+/scripts/backfill-activity.ts

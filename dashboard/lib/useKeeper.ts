@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useReadContracts } from 'wagmi';
-import { useEffect, useState } from 'react';
-import { legacyKeeperAbi, LEGACY_KEEPER_ADDRESS } from './contract';
+import { useReadContracts } from "wagmi";
+import { useEffect, useState } from "react";
+import { type Address } from "viem";
+import { legacyKeeperAbi } from "./contract";
 
 export interface Beneficiary {
   wallet: string;
@@ -15,6 +16,7 @@ export interface KeeperState {
   owner?: string;
   lastHeartbeat: number;
   timeSinceHeartbeat: number;
+  heartbeatInterval: number;
   timeoutDuration: number;
   gracePeriod: number;
   livenessActive: boolean;
@@ -28,31 +30,32 @@ export interface KeeperState {
   privateRoutingEnabled: boolean;
   beneficiaries: Beneficiary[];
   totalShareBps: number;
+  trackedTokens: string[];
   /** Live-ticking seconds until distribution becomes callable. */
   secondsUntilDue: number;
   refetch: () => void;
 }
 
-const contract = { address: LEGACY_KEEPER_ADDRESS, abi: legacyKeeperAbi } as const;
-
-export function useKeeper(): KeeperState {
+export function useKeeper(planAddress?: Address): KeeperState {
+  const contract = { address: planAddress, abi: legacyKeeperAbi } as const;
   const { data, isLoading, refetch } = useReadContracts({
     contracts: [
-      { ...contract, functionName: 'owner' },
-      { ...contract, functionName: 'getLivenessStatus' },
-      { ...contract, functionName: 'getTimeoutStatus' },
-      { ...contract, functionName: 'liveness' },
-      { ...contract, functionName: 'vault' },
-      { ...contract, functionName: 'getBeneficiaries' },
-      { ...contract, functionName: 'totalShareBps' },
-      { ...contract, functionName: 'inheritanceExecuted' },
-      { ...contract, functionName: 'evacuationExecuted' },
+      { ...contract, functionName: "owner" },
+      { ...contract, functionName: "getLivenessStatus" },
+      { ...contract, functionName: "getTimeoutStatus" },
+      { ...contract, functionName: "liveness" },
+      { ...contract, functionName: "vault" },
+      { ...contract, functionName: "getBeneficiaries" },
+      { ...contract, functionName: "totalShareBps" },
+      { ...contract, functionName: "inheritanceExecuted" },
+      { ...contract, functionName: "evacuationExecuted" },
+      { ...contract, functionName: "getTrackedTokens" },
     ],
-    query: { enabled: LEGACY_KEEPER_ADDRESS.length === 42 },
+    query: { enabled: Boolean(planAddress) },
   });
 
-  const read = <T,>(i: number): T | undefined =>
-    data?.[i]?.status === 'success' ? (data[i].result as T) : undefined;
+  const read = <T>(i: number): T | undefined =>
+    data?.[i]?.status === "success" ? (data[i].result as T) : undefined;
 
   const status = read<readonly [bigint, bigint, boolean, boolean]>(1);
   const timeout = read<readonly [boolean, boolean]>(2);
@@ -75,10 +78,11 @@ export function useKeeper(): KeeperState {
 
   return {
     loading: isLoading,
-    configured: LEGACY_KEEPER_ADDRESS.length === 42 && data !== undefined,
+    configured: Boolean(planAddress && data !== undefined),
     owner: read<string>(0),
     lastHeartbeat: Number(status?.[0] ?? 0n),
     timeSinceHeartbeat: timeSince,
+    heartbeatInterval: Number(cfg?.[0] ?? 0n),
     timeoutDuration,
     gracePeriod,
     livenessActive: Boolean(cfg?.[4]),
@@ -95,6 +99,7 @@ export function useKeeper(): KeeperState {
       shareBps: Number(b.shareBps),
     })),
     totalShareBps: Number(read<number>(6) ?? 0),
+    trackedTokens: [...(read<readonly string[]>(9) ?? [])],
     secondsUntilDue: Math.max(0, dueAt - timeSince - tick),
     refetch,
   };

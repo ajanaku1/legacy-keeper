@@ -1,0 +1,303 @@
+{
+  "id": "w8wql5fzyf8fa0q0qpp8d",
+  "name": "LegacyKeeper — Plan Configuration",
+  "description": "Re-resolves the owner plan, then relays one action-specific signature.",
+  "userId": "JRIL0NJgSOf3KmglZMVw8fkeM8eZne60",
+  "organizationId": "81e642c8-1c11-478b-a5fe-0fa802e33d80",
+  "isAnonymous": false,
+  "featured": false,
+  "featuredOrder": 0,
+  "featuredProtocol": null,
+  "featuredProtocolOrder": 0,
+  "projectId": null,
+  "tagId": null,
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "data": {
+        "type": "trigger",
+        "label": "Configuration Webhook",
+        "config": {
+          "triggerType": "Webhook",
+          "webhookSchema": "{\"type\":\"object\",\"required\":[\"owner\",\"plan\",\"action\",\"functionArgs\"],\"properties\":{\"owner\":{\"type\":\"string\"},\"plan\":{\"type\":\"string\"},\"action\":{\"type\":\"string\"},\"functionArgs\":{\"type\":\"string\"}},\"additionalProperties\":false}"
+        },
+        "status": "idle"
+      },
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "resolve-plan",
+      "data": {
+        "type": "action",
+        "label": "Resolve Owner Plan",
+        "config": {
+          "abi": "[{\"name\":\"planOf\",\"type\":\"function\",\"stateMutability\":\"view\",\"inputs\":[{\"name\":\"owner\",\"type\":\"address\"}],\"outputs\":[{\"name\":\"plan\",\"type\":\"address\"}]}]",
+          "network": "11155111",
+          "actionType": "web3/read-contract",
+          "abiFunction": "planOf",
+          "functionArgs": "[\"{{@trigger-1:Configuration Webhook.owner}}\"]",
+          "contractAddress": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 252,
+        "y": 0
+      }
+    },
+    {
+      "id": "plan-matches",
+      "data": {
+        "type": "action",
+        "label": "Registered Plan?",
+        "config": {
+          "condition": "{{@resolve-plan:Resolve Owner Plan.result.plan}} === {{@trigger-1:Configuration Webhook.plan}}",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 504,
+        "y": 0
+      }
+    },
+    {
+      "id": "is-action-0",
+      "data": {
+        "type": "action",
+        "label": "Action Is beneficiaries",
+        "config": {
+          "condition": "{{@trigger-1:Configuration Webhook.action}} === \"beneficiaries\"",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 756,
+        "y": 0
+      }
+    },
+    {
+      "id": "set-beneficiaries",
+      "data": {
+        "type": "action",
+        "label": "Set Beneficiaries",
+        "config": {
+          "abi": "[{\"name\":\"setBeneficiariesBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"wallets\",\"type\":\"address[]\"},{\"name\":\"shares\",\"type\":\"uint16[]\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "setBeneficiariesBySig",
+          "functionArgs": "{{@trigger-1:Configuration Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Configuration Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1008,
+        "y": -348
+      }
+    },
+    {
+      "id": "is-action-1",
+      "data": {
+        "type": "action",
+        "label": "Action Is liveness",
+        "config": {
+          "condition": "{{@trigger-1:Configuration Webhook.action}} === \"liveness\"",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1008,
+        "y": 116
+      }
+    },
+    {
+      "id": "set-liveness",
+      "data": {
+        "type": "action",
+        "label": "Set Liveness",
+        "config": {
+          "abi": "[{\"name\":\"setLivenessConfigBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"heartbeatInterval\",\"type\":\"uint64\"},{\"name\":\"timeoutDuration\",\"type\":\"uint64\"},{\"name\":\"gracePeriod\",\"type\":\"uint64\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "setLivenessConfigBySig",
+          "functionArgs": "{{@trigger-1:Configuration Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Configuration Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1260,
+        "y": -116
+      }
+    },
+    {
+      "id": "is-action-2",
+      "data": {
+        "type": "action",
+        "label": "Action Is recovery",
+        "config": {
+          "condition": "{{@trigger-1:Configuration Webhook.action}} === \"recovery\"",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1260,
+        "y": 232
+      }
+    },
+    {
+      "id": "set-recovery",
+      "data": {
+        "type": "action",
+        "label": "Set Recovery",
+        "config": {
+          "abi": "[{\"name\":\"setRecoveryConfigBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"recoveryKey\",\"type\":\"address\"},{\"name\":\"safeVault\",\"type\":\"address\"},{\"name\":\"allowSharedRecovery\",\"type\":\"bool\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "setRecoveryConfigBySig",
+          "functionArgs": "{{@trigger-1:Configuration Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Configuration Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1512,
+        "y": 116
+      }
+    },
+    {
+      "id": "is-action-3",
+      "data": {
+        "type": "action",
+        "label": "Action Is trackedTokens",
+        "config": {
+          "condition": "{{@trigger-1:Configuration Webhook.action}} === \"trackedTokens\"",
+          "actionType": "Condition"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1512,
+        "y": 348
+      }
+    },
+    {
+      "id": "set-tokens",
+      "data": {
+        "type": "action",
+        "label": "Set Tracked Tokens",
+        "config": {
+          "abi": "[{\"name\":\"setTrackedTokensBySig\",\"type\":\"function\",\"stateMutability\":\"nonpayable\",\"inputs\":[{\"name\":\"tokens\",\"type\":\"address[]\"},{\"name\":\"nonce\",\"type\":\"uint256\"},{\"name\":\"deadline\",\"type\":\"uint256\"},{\"name\":\"signature\",\"type\":\"bytes\"}],\"outputs\":[]}]",
+          "network": "11155111",
+          "actionType": "web3/write-contract",
+          "abiFunction": "setTrackedTokensBySig",
+          "functionArgs": "{{@trigger-1:Configuration Webhook.functionArgs}}",
+          "contractAddress": "{{@trigger-1:Configuration Webhook.plan}}"
+        },
+        "status": "idle"
+      },
+      "type": "action",
+      "position": {
+        "x": 1764,
+        "y": 348
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "trigger-1->resolve-plan",
+      "source": "trigger-1",
+      "target": "resolve-plan"
+    },
+    {
+      "id": "resolve-plan->plan-matches",
+      "source": "resolve-plan",
+      "target": "plan-matches"
+    },
+    {
+      "id": "plan-matches->is-action-0:true",
+      "source": "plan-matches",
+      "target": "is-action-0",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "is-action-0->set-beneficiaries:true",
+      "source": "is-action-0",
+      "target": "set-beneficiaries",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "is-action-0->is-action-1:false",
+      "source": "is-action-0",
+      "target": "is-action-1",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "is-action-1->set-liveness:true",
+      "source": "is-action-1",
+      "target": "set-liveness",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "is-action-1->is-action-2:false",
+      "source": "is-action-1",
+      "target": "is-action-2",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "is-action-2->set-recovery:true",
+      "source": "is-action-2",
+      "target": "set-recovery",
+      "sourceHandle": "true"
+    },
+    {
+      "id": "is-action-2->is-action-3:false",
+      "source": "is-action-2",
+      "target": "is-action-3",
+      "sourceHandle": "false"
+    },
+    {
+      "id": "is-action-3->set-tokens:true",
+      "source": "is-action-3",
+      "target": "set-tokens",
+      "sourceHandle": "true"
+    }
+  ],
+  "visibility": "private",
+  "enabled": true,
+  "sourceWorkflowId": null,
+  "createdAt": "2026-08-04T20:04:05.825Z",
+  "updatedAt": "2026-08-06T10:30:48.077Z",
+  "seededAt": null,
+  "isListed": false,
+  "listedSlug": null,
+  "listedAt": null,
+  "inputSchema": null,
+  "outputMapping": null,
+  "priceUsdcPerCall": null,
+  "workflowType": "write",
+  "category": null,
+  "chain": null,
+  "listingVersion": 1,
+  "deletedAt": null,
+  "deactivatedAt": null,
+  "publicTags": [],
+  "isOwner": true
+}

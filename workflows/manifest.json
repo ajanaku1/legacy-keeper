@@ -1,19 +1,19 @@
 {
-  "contract": "0x0f92268dC069f40e9e6A37BF36dc49D60377f4bA",
-  "generatedAt": "2026-08-02T00:24:04.324Z",
+  "contract": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576",
+  "generatedAt": "2026-08-06T10:30:50.878Z",
   "workflows": [
     {
-      "key": "liveness-monitor",
-      "name": "LegacyKeeper — Liveness Monitor",
-      "workflowId": "n6h03seyd2178mvj0p9nm",
+      "key": "plan-creation",
+      "name": "LegacyKeeper — Plan Creation",
+      "workflowId": "nraq3v7485euzqd6uf148",
       "triggers": [
-        "Schedule"
+        "Webhook"
       ]
     },
     {
-      "key": "panic-evacuation",
-      "name": "LegacyKeeper — Panic Evacuation",
-      "workflowId": "pm22qhfnox30w0mnngw01",
+      "key": "plan-configuration",
+      "name": "LegacyKeeper — Plan Configuration",
+      "workflowId": "w8wql5fzyf8fa0q0qpp8d",
       "triggers": [
         "Webhook"
       ]
@@ -27,19 +27,11 @@
       ]
     },
     {
-      "key": "grace-watch",
-      "name": "LegacyKeeper — Heartbeat Event Watch",
-      "workflowId": "sux1hhjj0u6an7p6vddp2",
+      "key": "panic-evacuation",
+      "name": "LegacyKeeper — Panic Evacuation",
+      "workflowId": "pm22qhfnox30w0mnngw01",
       "triggers": [
-        "Event"
-      ]
-    },
-    {
-      "key": "block-health",
-      "name": "LegacyKeeper — Block Health Check",
-      "workflowId": "5w133r3gajq3haixv1nhl",
-      "triggers": [
-        "Block"
+        "Webhook"
       ]
     }
   ]

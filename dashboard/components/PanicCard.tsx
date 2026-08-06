@@ -1,12 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { sepolia } from '@/lib/sepolia';
-import { LEGACY_KEEPER_ADDRESS } from '@/lib/contract';
+import type { Address } from 'viem';
 import { prepareHeartbeatMessage } from '@/lib/heartbeat-client';
-import { shortAddress } from '@/lib/format';
+import { userFacingActionError } from '@/lib/client-action-error';
 
 interface Props {
+  ownerAddress?: Address;
+  planAddress?: Address;
+  chainId?: number;
   safeVault?: string;
   recoveryKeyRegistered: boolean;
   alreadyEvacuated: boolean;
@@ -17,70 +19,138 @@ interface PreparedPayload {
   deadline: string;
 }
 
-export function PanicCard({ safeVault, recoveryKeyRegistered, alreadyEvacuated }: Props) {
+export function PanicCard(props: Props) {
   const [payload, setPayload] = useState<PreparedPayload>();
   const [signature, setSignature] = useState('');
   const [status, setStatus] = useState('No evacuation request has been created.');
   const [busy, setBusy] = useState(false);
-  const vaultReady = safeVault && safeVault !== '0x0000000000000000000000000000000000000000';
-  const ready = Boolean(vaultReady && recoveryKeyRegistered) && !alreadyEvacuated;
+  const readiness = evacuationReadiness(props);
 
-  function prepare() {
-    const message = prepareHeartbeatMessage(crypto.getRandomValues(new Uint8Array(32)), Math.floor(Date.now() / 1_000));
-    setPayload({ nonce: message.nonce.toString(), deadline: message.deadline.toString() });
+  function prepare(): void {
+    const message = prepareHeartbeatMessage(
+      crypto.getRandomValues(new Uint8Array(32)),
+      Math.floor(Date.now() / 1_000)
+    );
+    setPayload({
+      nonce: message.nonce.toString(),
+      deadline: message.deadline.toString(),
+    });
     setSignature('');
-    setStatus('Payload ready. Sign it with the separate recovery key, then paste only the signature here.');
+    setStatus('Sign this typed payload with the separate recovery wallet.');
   }
 
-  async function submit() {
-    if (!payload || !signature) return;
+  async function submit(): Promise<void> {
+    if (!payload || !signature || !props.ownerAddress || !props.planAddress) return;
     setBusy(true);
     setStatus('KeeperHub is settling and verifying the evacuation.');
     try {
-      const response = await fetch('/api/evacuation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, signature }) });
-      const result = await response.json() as { stage?: string; executionId?: string; error?: string };
-      if (!response.ok || result.stage !== 'verified') throw new Error(result.error ?? 'Evacuation could not be verified');
+      const response = await fetch('/api/evacuation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chainId: props.chainId,
+          owner: props.ownerAddress,
+          plan: props.planAddress,
+          ...payload,
+          signature,
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok || !isVerifiedEvacuation(result)) {
+        throw new Error(
+          userFacingActionError(result, 'Evacuation could not be verified.')
+        );
+      }
       setStatus(`Evacuation verified. KeeperHub execution ${result.executionId}.`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Evacuation failed');
+      setStatus(error instanceof Error ? error.message : 'Evacuation failed.');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="panic-card" id="recovery-action" aria-labelledby="panic-title">
-      <p className="eyebrow">Emergency recovery</p>
-      <h2 id="panic-title">{alreadyEvacuated ? 'Assets already evacuated' : 'Think the owner wallet is compromised?'}</h2>
-      <p>Prepare the typed-data payload here, sign it outside this browser with the separate recovery key, then let KeeperHub execute and verify the sweep.</p>
-      <p className="mono">Destination: {shortAddress(safeVault)}</p>
+    <article className="danger-card" aria-labelledby="evacuation-title">
+      <span className="section-label">Emergency evacuation</span>
+      <h2 id="evacuation-title">Move supported assets to the safe vault.</h2>
+      <p>
+        The separate recovery wallet signs. LegacyKeeper never asks for its
+        secret material.
+      </p>
       {!payload ? (
-        <button className="panic-button" disabled={!ready} onClick={prepare}>{panicButtonCopy(ready, alreadyEvacuated)}</button>
+        <button
+          className="danger-button"
+          disabled={readiness.code !== 'READY'}
+          onClick={prepare}
+        >
+          Prepare evacuation
+        </button>
       ) : (
         <div className="evacuation-form">
           <label>Typed data to sign</label>
-          <pre>{JSON.stringify(typedPayload(payload), null, 2)}</pre>
-          <label htmlFor="recovery-signature">Recovery-key signature</label>
-          <textarea id="recovery-signature" rows={3} value={signature} onChange={(event) => setSignature(event.target.value.trim())} placeholder="0x…" autoComplete="off" spellCheck={false} />
-          <div className="confirm-actions"><button onClick={() => setPayload(undefined)}>Cancel</button><button disabled={!signature || busy} onClick={submit}>{busy ? 'Verifying' : 'Submit through KeeperHub'}</button></div>
+          <pre>{JSON.stringify(typedPayload(props.planAddress, payload), null, 2)}</pre>
+          <label htmlFor="recovery-signature">Recovery-wallet signature</label>
+          <textarea
+            id="recovery-signature"
+            rows={3}
+            value={signature}
+            onChange={(event) => setSignature(event.target.value.trim())}
+            placeholder="0x…"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <div className="confirm-actions">
+            <button className="secondary" onClick={() => setPayload(undefined)}>
+              Cancel
+            </button>
+            <button className="danger-button" disabled={!signature || busy} onClick={submit}>
+              {busy ? 'Verifying' : 'Submit through KeeperHub'}
+            </button>
+          </div>
         </div>
       )}
-      <p className="panic-status" role="status" aria-live="polite">{status}</p>
-    </section>
+      <p className="disabled-reason" role="status" aria-live="polite">
+        {payload ? status : readiness.reason}
+      </p>
+    </article>
   );
 }
 
-function typedPayload(message: PreparedPayload) {
+function isVerifiedEvacuation(
+  value: unknown
+): value is { stage: 'verified'; executionId: string } {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Record<string, unknown>;
+  return result.stage === 'verified' && typeof result.executionId === 'string';
+}
+
+function evacuationReadiness(props: Props): { code: string; reason: string } {
+  if (!props.ownerAddress || !props.planAddress)
+    return { code: 'SETUP_INCOMPLETE', reason: 'Load the owner plan first.' };
+  if (props.chainId !== 11155111)
+    return { code: 'WRONG_NETWORK', reason: 'Switch to Sepolia first.' };
+  if (!props.recoveryKeyRegistered || !props.safeVault)
+    return { code: 'RECOVERY_INCOMPLETE', reason: 'Configure both recovery addresses first.' };
+  if (props.alreadyEvacuated)
+    return { code: 'PLAN_SETTLED', reason: 'This plan has already evacuated.' };
+  return { code: 'READY', reason: 'A separate recovery-wallet signature is required.' };
+}
+
+function typedPayload(plan: Address | undefined, message: PreparedPayload) {
   return {
-    domain: { name: 'LegacyKeeper', version: '1', chainId: sepolia.id, verifyingContract: LEGACY_KEEPER_ADDRESS },
-    types: { Evacuate: [{ name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }] },
+    domain: {
+      name: 'LegacyKeeper',
+      version: '1',
+      chainId: 11155111,
+      verifyingContract: plan,
+    },
+    types: {
+      Evacuate: [
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    },
     primaryType: 'Evacuate',
     message,
   };
-}
-
-function panicButtonCopy(ready: boolean, evacuated: boolean): string {
-  if (ready) return 'Prepare evacuation payload';
-  if (evacuated) return 'Evacuated';
-  return 'Configure recovery first';
 }

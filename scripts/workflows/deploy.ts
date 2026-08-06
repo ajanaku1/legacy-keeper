@@ -10,12 +10,14 @@
  * schedule, event, block, and webhook trigger processing immediately.
  *
  *   npx tsx scripts/workflows/deploy.ts [--validate-only] [--enable]
+ *   npx tsx scripts/workflows/deploy.ts --wallet-scoped [--enable]
  */
 
 import "dotenv/config";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { McpClient } from "../../agent/keeperhub/mcp-client";
 import { buildWorkflows, WorkflowDef } from "../../workflows/definitions";
+import { buildWalletScopedWorkflows } from "../../workflows/wallet-scoped-definitions";
 
 const OUT_DIR = "workflows/exported";
 type JsonObject = Record<string, unknown>;
@@ -40,16 +42,18 @@ interface DeployedWorkflow {
 async function main() {
   const validateOnly = process.argv.includes("--validate-only");
   const enable = process.argv.includes("--enable");
+  const walletScoped = process.argv.includes("--wallet-scoped");
   const storedManifest = readStoredManifest();
-  const contract = process.env.LEGACY_KEEPER_ADDRESS || storedManifest.contract;
+  const contract = walletScoped
+    ? req("NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS")
+    : process.env.LEGACY_KEEPER_ADDRESS || storedManifest.contract;
   if (!contract) throw new Error("LEGACY_KEEPER_ADDRESS is required");
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (enable && !chatId) {
+  if (enable && !walletScoped && !chatId) {
     throw new Error(
       "TELEGRAM_CHAT_ID is required before enabling notifications",
     );
   }
-
   const mcp = new McpClient({
     url: process.env.KEEPERHUB_MCP_URL ?? "https://app.keeperhub.com/mcp",
     apiKey: req("KEEPERHUB_API_KEY"),
@@ -58,24 +62,30 @@ async function main() {
   console.log(`connected: ${server.name} v${server.version}`);
   console.log(`contract:  ${contract}\n`);
 
-  const telegramIntegrationId = await resolveTelegramIntegration(mcp);
-  if (enable && !telegramIntegrationId) {
+  const telegramIntegrationId = walletScoped
+    ? undefined
+    : await resolveTelegramIntegration(mcp);
+  if (enable && !walletScoped && !telegramIntegrationId) {
     throw new Error(
       "A KeeperHub Telegram integration is required before enabling",
     );
   }
-  const defs = buildWorkflows(
-    contract,
-    chatId || "000000000",
-    telegramIntegrationId,
-  );
+  const defs = walletScoped
+    ? buildWalletScopedWorkflows(contract)
+    : buildWorkflows(contract, chatId || "000000000", telegramIntegrationId);
   const existing = await listExisting(mcp);
   if (validateOnly) {
     await validateExisting(defs, existing, storedManifest, mcp);
     return;
   }
 
-  const deployed = await deployDefinitions(defs, existing, storedManifest, mcp);
+  const deployed = await deployDefinitions(
+    defs,
+    existing,
+    storedManifest,
+    mcp,
+    walletScoped,
+  );
   if (enable) await enableWithRollback(deployed, mcp);
   await exportDefinitions(contract, deployed, mcp);
 }
@@ -85,12 +95,19 @@ async function deployDefinitions(
   existing: ExistingWorkflow[],
   manifest: StoredManifest,
   mcp: McpClient,
+  walletScoped: boolean,
 ): Promise<DeployedWorkflow[]> {
   const deployed: DeployedWorkflow[] = [];
   for (const definition of definitions) {
     console.log(definition.name);
     const prior = findPrior(definition, existing, manifest);
     const id = await upsertDefinition(definition, prior, mcp);
+    if (walletScoped) {
+      await mcp.callTool("update_workflow_listing", {
+        workflowId: id,
+        workflowType: "write",
+      });
+    }
     await assertValid(id, mcp);
     deployed.push({ definition, id, wasEnabled: prior?.enabled === true });
   }

@@ -19,11 +19,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 let fake: FakeHandle | null = null;
-afterEach(async () => { await fake?.close(); fake = null; });
+afterEach(async () => {
+  await fake?.close();
+  fake = null;
+});
 
 const ledgerPath = () => join(mkdtempSync(join(tmpdir(), 'lk-')), 'audit.jsonl');
-const client = (url: string, extra = {}) =>
-  new McpClient({ url, apiKey: 'kh_test', baseDelayMs: 1, ...extra });
+const client = (url: string, extra = {}) => new McpClient({ url, apiKey: 'kh_test', baseDelayMs: 1, ...extra });
 const verifier: ExecutionVerifier = {
   verify: async () => ({
     verified: true,
@@ -99,9 +101,15 @@ describe('MCP client — handshake', () => {
 describe('Executor — settlement semantics', () => {
   it('treats status "completed" with success:true as a real success', async () => {
     fake = await startFakeKeeperHub({
-      executionStatus: { status: 'completed', result: { success: true, reverted: false }, transactionHash: '0xabc', gasUsedWei: '146484' },
+      executionStatus: {
+        status: 'completed',
+        result: { success: true, reverted: false },
+        transactionHash: '0xabc',
+        gasUsedWei: '146484',
+      },
     });
-    const c = client(fake.url); await c.connect();
+    const c = client(fake.url);
+    await c.connect();
     const ledger = new AuditLedger(ledgerPath());
     const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
@@ -115,9 +123,18 @@ describe('Executor — settlement semantics', () => {
     // The dangerous case: settled is not the same as succeeded. Reading only
     // `status` here would report a reverted estate distribution as done.
     fake = await startFakeKeeperHub({
-      executionStatus: { status: 'completed', result: { success: false, reverted: true, revertReason: 'LK: not yet due' }, transactionHash: '0xdead' },
+      executionStatus: {
+        status: 'completed',
+        result: {
+          success: false,
+          reverted: true,
+          revertReason: 'LK: not yet due',
+        },
+        transactionHash: '0xdead',
+      },
     });
-    const c = client(fake.url); await c.connect();
+    const c = client(fake.url);
+    await c.connect();
     const ledger = new AuditLedger(ledgerPath());
     const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
@@ -125,20 +142,21 @@ describe('Executor — settlement semantics', () => {
     expect(r.success).toBe(false);
   });
 
-  it('uses a DISTINCT idempotency key per attempt so retries can recover', async () => {
-    // Reusing one key made KeeperHub replay the first failure forever
-    // (friction-log #07). Attempts must be individually keyed.
+  it('rotates the idempotency key after each confirmed revert', async () => {
+    // A terminal failure is safe to supersede with a fresh request. Unknown
+    // outcomes follow the opposite rule and keep the original key.
     fake = await startFakeKeeperHub({
-      executionStatus: { status: 'completed', result: { success: false, reverted: true } },
+      executionStatus: {
+        status: 'completed',
+        result: { success: false, reverted: true },
+      },
     });
-    const c = client(fake.url); await c.connect();
+    const c = client(fake.url);
+    await c.connect();
     const ledger = new AuditLedger(ledgerPath());
     const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
 
-    await ex.executeInheritance(
-      { type: 'scheduled', source: 'test' },
-      { maxAttempts: 3, retryBaseDelayMs: 1 }
-    );
+    await ex.executeInheritance({ type: 'scheduled', source: 'test' }, { maxAttempts: 3, retryBaseDelayMs: 1 });
 
     const keys = fake.idempotencyKeys;
     expect(keys.length).toBeGreaterThan(1);
@@ -147,7 +165,8 @@ describe('Executor — settlement semantics', () => {
 
   it('records every attempt so a recovery is visible in the ledger', async () => {
     fake = await startFakeKeeperHub({ expireSessionTimes: 0 });
-    const c = client(fake.url); await c.connect();
+    const c = client(fake.url);
+    await c.connect();
     const path = ledgerPath();
     const ledger = new AuditLedger(path);
     const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
@@ -163,10 +182,31 @@ describe('Executor — settlement semantics', () => {
 describe('Audit ledger — C3 evidence', () => {
   it('identifies a failure followed by a success as recovered', () => {
     const ledger = new AuditLedger(ledgerPath());
-    const base = { timestamp: new Date().toISOString(), trigger: { type: 'scheduled' as const, source: 't' }, action: 'executeInheritance', params: {} };
-    ledger.append({ ...base, executionKey: 'k1', attempt: 1, outcome: 'failed' });
-    ledger.append({ ...base, executionKey: 'k1', attempt: 2, outcome: 'success', gasUsed: '100' });
-    ledger.append({ ...base, executionKey: 'k2', attempt: 1, outcome: 'success' });
+    const base = {
+      timestamp: new Date().toISOString(),
+      trigger: { type: 'scheduled' as const, source: 't' },
+      action: 'executeInheritance',
+      params: {},
+    };
+    ledger.append({
+      ...base,
+      executionKey: 'k1',
+      attempt: 1,
+      outcome: 'failed',
+    });
+    ledger.append({
+      ...base,
+      executionKey: 'k1',
+      attempt: 2,
+      outcome: 'success',
+      gasUsed: '100',
+    });
+    ledger.append({
+      ...base,
+      executionKey: 'k2',
+      attempt: 1,
+      outcome: 'success',
+    });
 
     expect(ledger.recoveredAfterFailure()).toEqual(['k1']);
     expect(ledger.summary().recovered).toBe(1);
@@ -174,9 +214,24 @@ describe('Audit ledger — C3 evidence', () => {
 
   it('does not count a run that only ever failed', () => {
     const ledger = new AuditLedger(ledgerPath());
-    const base = { timestamp: new Date().toISOString(), trigger: { type: 'scheduled' as const, source: 't' }, action: 'evacuate', params: {} };
-    ledger.append({ ...base, executionKey: 'k3', attempt: 1, outcome: 'failed' });
-    ledger.append({ ...base, executionKey: 'k3', attempt: 2, outcome: 'failed' });
+    const base = {
+      timestamp: new Date().toISOString(),
+      trigger: { type: 'scheduled' as const, source: 't' },
+      action: 'evacuate',
+      params: {},
+    };
+    ledger.append({
+      ...base,
+      executionKey: 'k3',
+      attempt: 1,
+      outcome: 'failed',
+    });
+    ledger.append({
+      ...base,
+      executionKey: 'k3',
+      attempt: 2,
+      outcome: 'failed',
+    });
     expect(ledger.recoveredAfterFailure()).toEqual([]);
   });
 });
@@ -193,9 +248,7 @@ describe('Route policy — sponsorship and privacy are distinct', () => {
   });
 
   it('refuses to describe one execution as both sponsored and private', () => {
-    expect(() => assertRoutesExclusive({ sponsored: true, privateRoute: true })).toThrow(
-      /route policy violated/
-    );
+    expect(() => assertRoutesExclusive({ sponsored: true, privateRoute: true })).toThrow(/route policy violated/);
     expect(() => assertRoutesExclusive({ sponsored: true })).not.toThrow();
   });
 
@@ -210,7 +263,8 @@ describe('Route policy — sponsorship and privacy are distinct', () => {
 
   it('records the requested route on every audit entry', async () => {
     fake = await startFakeKeeperHub();
-    const c = client(fake.url); await c.connect();
+    const c = client(fake.url);
+    await c.connect();
     const ledger = new AuditLedger(ledgerPath());
     const ex = new KeeperHubExecutor(c, ledger, 11155111, '0xcontract', verifier);
     await ex.executeEvacuation(

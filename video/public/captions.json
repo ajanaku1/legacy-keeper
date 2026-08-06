@@ -1,9 +1,0 @@
-{
-  "hook": [{"text":"A dead man's switch is useless if the transaction never lands. LegacyKeeper treats acceptance as the start, not the result.","startMs":0,"endMs":5400,"timestampMs":null,"confidence":null}],
-  "problem": [{"text":"Most agents stop at an API response. LegacyKeeper requires settlement, a successful receipt, the expected event, and confirmed product state.","startMs":0,"endMs":6900,"timestampMs":null,"confidence":null}],
-  "positioning": [{"text":"The owner signs one short-lived message. KeeperHub sponsors the transaction on Sepolia. LegacyKeeper then verifies the chain independently before showing success.","startMs":0,"endMs":7067,"timestampMs":null,"confidence":null}],
-  "product": [{"text":"This is the live dashboard. It reads the deployed estate, the exact beneficiary split, and every retained execution attempt from real evidence.","startMs":0,"endMs":6233,"timestampMs":null,"confidence":null}],
-  "heartbeat": [{"text":"A normal check-in never calls the contract directly. The browser sends only nonce, deadline, and signature to the workflow-specific KeeperHub webhook.","startMs":0,"endMs":6667,"timestampMs":null,"confidence":null}],
-  "recovery": [{"text":"Failed attempts stay visible beside the recovered transaction. A separate x402 call also checked the live token allowance and changed the coverage verdict.","startMs":0,"endMs":6567,"timestampMs":null,"confidence":null}],
-  "close": [{"text":"Five enabled workflows. Four automatic trigger types. One hundred and two passing tests. LegacyKeeper proves the last mile before it claims success.","startMs":0,"endMs":6900,"timestampMs":null,"confidence":null}]
-}

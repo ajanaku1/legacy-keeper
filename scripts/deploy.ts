@@ -1,15 +1,4 @@
-/**
- * Deploy LegacyKeeper.
- *
- * Deployment goes direct via Hardhat rather than through KeeperHub — that is
- * a one-off setup step by a present, funded operator, not agent execution.
- * Everything the *agent* does still routes through KeeperHub (gate G4).
- *
- *   npx hardhat run scripts/deploy.ts --network sepolia
- *
- * Optional demo timing, so the whole Mode A lifecycle is filmable:
- *   DEMO_TIMEOUT_SECONDS=300 DEMO_GRACE_SECONDS=120 npx hardhat run ...
- */
+/** Deploy the wallet-scoped LegacyKeeperFactory on the selected network. */
 
 import { ethers, run, network } from 'hardhat';
 
@@ -27,31 +16,20 @@ async function main() {
     );
   }
 
-  const keeper = await ethers.deployContract('LegacyKeeper');
-  await keeper.waitForDeployment();
-  const address = await keeper.getAddress();
+  const factory = await ethers.deployContract('LegacyKeeperFactory');
+  await factory.waitForDeployment();
+  const address = await factory.getAddress();
 
-  console.log(`\nLegacyKeeper deployed: ${address}`);
-
-  // Short timings make the timeout → grace → distribution path demonstrable
-  // in minutes instead of 37 days.
-  const timeout = process.env.DEMO_TIMEOUT_SECONDS;
-  const grace = process.env.DEMO_GRACE_SECONDS;
-  if (timeout && grace) {
-    const tx = await keeper.getFunction('setLivenessConfig')(
-      60,
-      Number(timeout),
-      Number(grace)
-    );
-    await tx.wait();
-    console.log(`demo timings set: timeout ${timeout}s, grace ${grace}s`);
-  }
+  console.log(`\nLegacyKeeperFactory deployed: ${address}`);
 
   if (process.env.ETHERSCAN_API_KEY && network.name !== 'hardhat') {
     console.log('\nwaiting for block confirmations before verifying...');
-    await keeper.deploymentTransaction()?.wait(5);
+    await factory.deploymentTransaction()?.wait(5);
     try {
-      await run('verify:verify', { address, constructorArguments: [] });
+      await run('verify:verify', {
+        address,
+        constructorArguments: [],
+      });
       console.log('verified on Etherscan');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -59,7 +37,9 @@ async function main() {
     }
   }
 
-  console.log(`\nAdd to .env:\n  LEGACY_KEEPER_ADDRESS=${address}`);
+  console.log(
+    `\nAdd to .env:\n  NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS=${address}`
+  );
 }
 
 main()

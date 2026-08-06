@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">LegacyKeeper monochrome mark</title>
-  <desc id="desc">A split security shield protects a monitored square core.</desc>
-  <path fill="currentColor" fill-rule="evenodd" d="m240 64-168 64 24 184 144 136V320l-56-56-8-88 64-24V64Zm32 0 168 64-24 184-144 136V320l56-56 8-88-64-24V64ZM224 216h64v64h-64v-64Z"/>
-</svg>

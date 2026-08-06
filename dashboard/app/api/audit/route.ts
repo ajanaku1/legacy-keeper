@@ -1,33 +1,37 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { toPublicActivityEntries } from '@/lib/activity-ledger';
+import {
+  InvalidActivityRequestError,
+  loadWalletActivity,
+} from '@/lib/activity-route';
+import { serverActivityRepository } from '@/lib/activity-server';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * Serves the agent's real audit ledger. The dashboard renders whatever is in
- * this file and nothing else — if the agent has not run, the execution record
- * is empty rather than populated with plausible-looking sample rows.
- */
-export async function GET() {
-  const path = join(process.cwd(), '..', 'loop', 'memory', 'audit.jsonl');
-
-  if (!existsSync(path)) {
-    return NextResponse.json({ entries: [], source: path, present: false });
-  }
-
+export async function GET(request: NextRequest) {
+  const owner = request.nextUrl.searchParams.get('owner');
+  const requestedPage = Number(request.nextUrl.searchParams.get('page') ?? '1');
   try {
-    const entries = readFileSync(path, 'utf8')
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line))
-      .sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
-
-    return NextResponse.json({ entries, source: path, present: true });
+    const activity = await loadWalletActivity(
+      owner ?? '',
+      requestedPage,
+      serverActivityRepository()
+    );
+    return NextResponse.json({
+      ...activity,
+      entries: toPublicActivityEntries(activity.entries),
+    });
   } catch (error) {
+    if (error instanceof InvalidActivityRequestError) {
+      return NextResponse.json(
+        { entries: [], error: error.message },
+        { status: 400 }
+      );
+    }
+    console.error('Unable to read wallet activity.', error);
     return NextResponse.json(
-      { entries: [], present: false, error: String(error) },
-      { status: 500 }
+      { entries: [], error: 'Activity unavailable.' },
+      { status: 503 }
     );
   }
 }
