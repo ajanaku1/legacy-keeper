@@ -133,6 +133,27 @@ export const legacyKeeperAbi = [
     inputs: [],
     outputs: [{ type: "address[]" }],
   },
+  {
+    type: "function",
+    name: "pullableAmount",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "inheritanceTimestamp",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint64" }],
+  },
+  {
+    type: "function",
+    name: "tokenDistributed",
+    stateMutability: "view",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [{ type: "bool" }],
+  },
 ] as const satisfies Abi;
 
 export const EXPLORER = "https://sepolia.etherscan.io";

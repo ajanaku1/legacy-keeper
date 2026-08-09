@@ -48,7 +48,7 @@ describe('onboarding draft storage', () => {
 
   it('keys drafts by normalized owner wallet and chain', () => {
     expect(draftStorageKey(OWNER.toUpperCase(), 11155111)).toBe(
-      `legacykeeper:onboarding:v1:${OWNER}:11155111`
+      `legacykeeper:onboarding:v1:${OWNER}:11155111`,
     );
   });
 
@@ -97,9 +97,9 @@ describe('onboarding draft storage', () => {
     storage.setItem(draftStorageKey(OWNER, 11155111), '{broken');
 
     expect(loadOnboardingDraft(storage, OWNER, 11155111).step).toBe(1);
-    expect(
-      loadOnboardingDraft(storage, OWNER, 1).beneficiaries
-    ).toHaveLength(0);
+    expect(loadOnboardingDraft(storage, OWNER, 1).beneficiaries).toHaveLength(
+      0,
+    );
   });
 
   it('keeps working when browser storage is unavailable', () => {
@@ -125,20 +125,26 @@ describe('onboarding validation', () => {
     const draft = validDraft();
 
     expect(
-      validateOnboardingStep(draft, 1, { owner: OWNER, chainId: 1 })
+      validateOnboardingStep(draft, 1, { owner: OWNER, chainId: 1 }),
     ).toContain('Switch to Sepolia to continue.');
     expect(
       validateOnboardingStep(draft, 6, {
         owner: BENEFICIARY_A,
         chainId: 11155111,
-      })
+      }),
     ).toContain('Reconnect the wallet that started this draft.');
   });
 
   it('accepts safe timing and rejects invalid grace periods', () => {
     expect(validateOnboardingStep(validDraft(), 2)).toEqual([]);
     expect(
-      validateOnboardingStep({ ...validDraft(), graceDays: 90 }, 2)
+      validateOnboardingStep(
+        { ...validDraft(), timeoutDays: 1, graceDays: 0 },
+        2,
+      ),
+    ).toEqual([]);
+    expect(
+      validateOnboardingStep({ ...validDraft(), graceDays: 90 }, 2),
     ).toContain('Grace period must be shorter than the inactivity period.');
   });
 
@@ -153,13 +159,13 @@ describe('onboarding validation', () => {
             { address: BENEFICIARY_A, sharePercent: 20 },
           ],
         },
-        3
-      )
+        3,
+      ),
     ).toEqual(
       expect.arrayContaining([
         'Beneficiary addresses must be unique.',
         'Beneficiary shares must total exactly 100%.',
-      ])
+      ]),
     );
     expect(
       validateOnboardingStep(
@@ -170,8 +176,8 @@ describe('onboarding validation', () => {
             sharePercent: index === 0 ? 100 : 0,
           })),
         },
-        3
-      )
+        3,
+      ),
     ).toContain('You can add up to 10 beneficiaries.');
     expect(
       validateOnboardingStep(
@@ -182,8 +188,8 @@ describe('onboarding validation', () => {
             { address: BENEFICIARY_B, sharePercent: -10 },
           ],
         },
-        3
-      )
+        3,
+      ),
     ).toContain('Each beneficiary share must be between 1% and 100%.');
   });
 
@@ -196,8 +202,8 @@ describe('onboarding validation', () => {
           recoverySigner: OWNER,
           safeVault: RECOVERY,
         },
-        4
-      )
+        4,
+      ),
     ).toContain('Recovery addresses cannot be the owner wallet.');
     expect(
       validateOnboardingStep(
@@ -206,10 +212,10 @@ describe('onboarding validation', () => {
           safeVault: RECOVERY,
           allowSharedRecovery: false,
         },
-        4
-      )
+        4,
+      ),
     ).toContain(
-      'A shared recovery signer and vault require explicit acknowledgement.'
+      'A shared recovery signer and vault require explicit acknowledgement.',
     );
   });
 
@@ -227,8 +233,8 @@ describe('onboarding validation', () => {
             },
           ],
         },
-        5
-      )
+        5,
+      ),
     ).toContain('Every tracked token needs a valid contract address.');
     expect(
       validateOnboardingStep(
@@ -242,8 +248,8 @@ describe('onboarding validation', () => {
             },
           ],
         },
-        5
-      )
+        5,
+      ),
     ).toEqual([]);
   });
 });

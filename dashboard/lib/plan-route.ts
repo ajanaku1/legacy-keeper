@@ -10,6 +10,7 @@ import {
   requiredAddress,
   requiredBoolean,
   requiredInteger,
+  requiredNonNegativeInteger,
   requiredString,
   sameAddress,
 } from './action-validation';
@@ -57,12 +58,12 @@ export interface PlanCreationDependencies {
   nextIdempotencyKey: () => string;
   submitToKeeperHub: (
     request: PlanCreationRequest,
-    idempotencyKey: string
+    idempotencyKey: string,
   ) => Promise<KeeperHubSubmission>;
   awaitSettlement: (executionId: string) => Promise<KeeperHubSettlement>;
   verifyOnchain: (
     txHash: `0x${string}`,
-    owner: Address
+    owner: Address,
   ) => Promise<PlanCreationProof>;
 }
 
@@ -114,7 +115,7 @@ export function parsePlanCreationRequest(value: unknown): PlanCreationRequest {
 
 export async function executePlanCreation(
   rawRequest: PlanCreationRequest,
-  deps: PlanCreationDependencies
+  deps: PlanCreationDependencies,
 ): Promise<VerifiedPlanEvidence> {
   const request = parsePlanCreationRequest(rawRequest);
   assertSepolia(request.chainId);
@@ -122,13 +123,19 @@ export async function executePlanCreation(
   assertRecoverySeparation(request);
   const registered = await deps.readRegisteredPlan(request.owner);
   if (registered !== zeroAddress) {
-    throw new ActionError('PLAN_ALREADY_EXISTS', 'This wallet already has a plan.');
+    throw new ActionError(
+      'PLAN_ALREADY_EXISTS',
+      'This wallet already has a plan.',
+    );
   }
   assertSigner(await deps.recoverSigner(request), request.owner);
   const idempotencyKey = deps.nextIdempotencyKey();
   const submission = await deps.submitToKeeperHub(request, idempotencyKey);
   if (!submission.executionId) {
-    throw new ActionError('KEEPERHUB_REJECTED', 'KeeperHub returned no execution ID.');
+    throw new ActionError(
+      'KEEPERHUB_REJECTED',
+      'KeeperHub returned no execution ID.',
+    );
   }
   const executionEvidence = { executionId: submission.executionId };
   const settlement = await withActionEvidence(executionEvidence, async () => {
@@ -142,31 +149,55 @@ export async function executePlanCreation(
       const result = await deps.verifyOnchain(settlement.txHash, request.owner);
       assertPlanProof(result, request.owner, deps.factoryAddress);
       return result;
-    }
+    },
   );
-  return verifiedEvidence(request, submission.executionId, idempotencyKey, settlement.txHash, proof.plan as Address);
+  return verifiedEvidence(
+    request,
+    submission.executionId,
+    idempotencyKey,
+    settlement.txHash,
+    proof.plan as Address,
+  );
 }
 
 function parseConfig(value: unknown): PlanConfigRequest {
   const config = exactObject(value, CONFIG_FIELDS, 'Plan config');
-  const beneficiaryWallets = addressList(config.beneficiaryWallets, 'beneficiary');
-  const beneficiaryShares = integerList(config.beneficiaryShares, 'beneficiary share');
+  const beneficiaryWallets = addressList(
+    config.beneficiaryWallets,
+    'beneficiary',
+  );
+  const beneficiaryShares = integerList(
+    config.beneficiaryShares,
+    'beneficiary share',
+  );
   if (beneficiaryWallets.length !== beneficiaryShares.length) {
-    throw new ActionError('INVALID_REQUEST', 'Beneficiary addresses and shares must match.');
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Beneficiary addresses and shares must match.',
+    );
   }
   if (beneficiaryWallets.length < 1 || beneficiaryWallets.length > 10) {
-    throw new ActionError('INVALID_REQUEST', 'Add between 1 and 10 beneficiaries.');
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Add between 1 and 10 beneficiaries.',
+    );
   }
   if (beneficiaryShares.reduce((sum, share) => sum + share, 0) !== 10_000) {
-    throw new ActionError('INVALID_REQUEST', 'Beneficiary shares must total 10,000 bps.');
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Beneficiary shares must total 10,000 bps.',
+    );
   }
   assertUniqueAddresses(beneficiaryWallets, 'beneficiary');
   const trackedTokens = addressList(config.trackedTokens, 'tracked token');
   assertUniqueAddresses(trackedTokens, 'tracked token');
   return {
-    heartbeatInterval: requiredInteger(config.heartbeatInterval, 'heartbeatInterval'),
+    heartbeatInterval: requiredInteger(
+      config.heartbeatInterval,
+      'heartbeatInterval',
+    ),
     timeoutDuration: requiredInteger(config.timeoutDuration, 'timeoutDuration'),
-    gracePeriod: requiredInteger(config.gracePeriod, 'gracePeriod'),
+    gracePeriod: requiredNonNegativeInteger(config.gracePeriod, 'gracePeriod'),
     beneficiaryWallets,
     beneficiaryShares,
     recoveryKey: requiredAddress(config.recoveryKey, 'recoveryKey'),
@@ -174,7 +205,7 @@ function parseConfig(value: unknown): PlanConfigRequest {
     trackedTokens,
     allowSharedRecovery: requiredBoolean(
       config.allowSharedRecovery,
-      'allowSharedRecovery'
+      'allowSharedRecovery',
     ),
   };
 }
@@ -195,21 +226,30 @@ function integerList(value: unknown, label: string): number[] {
 
 function assertRecoverySeparation(request: PlanCreationRequest): void {
   const { config, owner } = request;
-  if (sameAddress(config.recoveryKey, owner) || sameAddress(config.safeVault, owner)) {
-    throw new ActionError('INVALID_REQUEST', 'Recovery addresses cannot be the owner wallet.');
+  if (
+    sameAddress(config.recoveryKey, owner) ||
+    sameAddress(config.safeVault, owner)
+  ) {
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Recovery addresses cannot be the owner wallet.',
+    );
   }
   if (
     sameAddress(config.recoveryKey, config.safeVault) &&
     !config.allowSharedRecovery
   ) {
-    throw new ActionError('INVALID_REQUEST', 'Shared recovery authority requires acknowledgement.');
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Shared recovery authority requires acknowledgement.',
+    );
   }
 }
 
 function assertPlanProof(
   proof: PlanCreationProof,
   owner: Address,
-  factory: Address
+  factory: Address,
 ): void {
   const valid =
     proof.receiptStatus === 'success' &&
@@ -222,7 +262,7 @@ function assertPlanProof(
   if (!valid) {
     throw new ActionError(
       'UNVERIFIED_RESULT',
-      'Receipt, PlanCreated event, registry, and plan state did not agree.'
+      'Receipt, PlanCreated event, registry, and plan state did not agree.',
     );
   }
 }
@@ -232,7 +272,7 @@ function verifiedEvidence(
   executionId: string,
   idempotencyKey: string,
   txHash: `0x${string}`,
-  plan: Address
+  plan: Address,
 ): VerifiedPlanEvidence {
   return {
     stage: 'verified',

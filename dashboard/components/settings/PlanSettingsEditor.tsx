@@ -929,6 +929,12 @@ function TimingEditor(props: {
           onChange={(graceDays) => set({ graceDays })}
         />
       </div>
+      {props.draft.graceDays === 0 && (
+        <p className="warning-note">
+          Zero grace removes the final recovery window. Inheritance becomes
+          callable as soon as inactivity expires and may already be callable.
+        </p>
+      )}
     </section>
   );
 }

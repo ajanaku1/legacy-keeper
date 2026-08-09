@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-08-09T18:15:24Z",
+  "network": {
+    "name": "Sepolia",
+    "chainId": 11155111,
+    "factory": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576"
+  },
+  "authorization": {
+    "owner": "0x34b0Ba20669f3ec4F1056853780c381e5e35F724",
+    "plan": "0x652caD60cd4D0F813e51B9b0cF43BA490EdA5228",
+    "action": "SetLivenessConfig",
+    "nonce": "76700455492687939461207846144828901001628041209928430957163416693715586115249",
+    "deadline": "1786299612",
+    "signatureScope": "EIP-712 LegacyKeeper v1, Sepolia chain 11155111, current-factory plan address"
+  },
+  "change": {
+    "reason": "Conservatively delay inheritance eligibility without changing beneficiaries, recovery authority, custody, or liveness activation.",
+    "before": {
+      "heartbeatInterval": 604800,
+      "timeoutDuration": 2592000,
+      "gracePeriod": 604800,
+      "livenessActive": true
+    },
+    "after": {
+      "heartbeatInterval": 604800,
+      "timeoutDuration": 2592000,
+      "gracePeriod": 691200,
+      "livenessActive": true
+    }
+  },
+  "keeperHub": {
+    "workflowId": "w8wql5fzyf8fa0q0qpp8d",
+    "executionId": "1bce3s44ha57dy1zg7t7z",
+    "idempotencyKey": "07286144-2dde-4f34-b11d-d8521162b0fe",
+    "sponsored": true
+  },
+  "receipt": {
+    "transactionHash": "0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc",
+    "explorer": "https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc",
+    "status": "success",
+    "blockNumber": 11453912,
+    "blockTimestamp": 1786299324,
+    "gasUsed": "83231"
+  },
+  "event": {
+    "address": "0x652caD60cd4D0F813e51B9b0cF43BA490EdA5228",
+    "name": "ConfigUpdated",
+    "key": "liveness_config"
+  },
+  "postState": {
+    "heartbeatInterval": "604800",
+    "timeoutDuration": "2592000",
+    "gracePeriod": "691200",
+    "lastHeartbeat": "1786204752",
+    "livenessActive": true,
+    "authorizationNonceConsumed": true
+  },
+  "verification": {
+    "keeperHubExecutionSettled": true,
+    "receiptSuccessful": true,
+    "expectedPlanEventPresent": true,
+    "factoryRegistryMatches": true,
+    "planOwnerMatchesSigner": true,
+    "resultingStateMatches": true
+  }
+}

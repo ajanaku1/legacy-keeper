@@ -4,7 +4,7 @@
 
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-111827?logo=nextdotjs)](dashboard/package.json)
 [![Solidity 0.8.24](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)](contracts/LegacyKeeper.sol)
-[![Core tests](https://img.shields.io/badge/core_tests-320_passing-16a34a)](#verification)
+[![Core tests](https://img.shields.io/badge/core_tests-322_passing-16a34a)](#verification)
 [![Sepolia](https://img.shields.io/badge/network-Sepolia-627eea?logo=ethereum)](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -12,9 +12,7 @@
   <img src="dashboard/public/legacykeeper-mark.svg" alt="LegacyKeeper shield mark" width="112" />
 </p>
 
-LegacyKeeper is a verifiable autonomous continuity agent. It monitors wallet
-liveness, coordinates sponsored execution through KeeperHub, and proves every
-outcome onchain.
+LegacyKeeper is a verifiable autonomous continuity agent that monitors wallet liveness, coordinates sponsored execution through KeeperHub, and proves every outcome onchain.
 
 The owner defines the policy. LegacyKeeper observes, decides, acts, and verifies
 within those signed constraints. Safety-critical decisions are deterministic by
@@ -28,6 +26,31 @@ assets outside the contract rules.
 
 The live release uses Sepolia. Do not connect a wallet that holds mainnet funds.
 
+## Judge Path: One Current-Factory Journey
+
+This is the shortest path through the working product and its evidence:
+
+| Step | Judge action | Proof |
+|---|---|---|
+| 1. Create | Sign one exact EIP-712 continuity policy; the enabled Plan Creation workflow relays `LegacyKeeperFactory.createPlan` | Current factory [`PlanCreated` transaction `0x4b3904ab`](https://sepolia.etherscan.io/tx/0x4b3904ab94b701cf30433082eed2e08931749956ee8e0d5f8d8405fd3af38a31) registered owner `0x34b0…F724` to plan [`0x652c…5228`](https://sepolia.etherscan.io/address/0x652caD60cd4D0F813e51B9b0cF43BA490EdA5228) |
+| 2. Configure | Increase only the grace period from seven to eight days; the enabled Configuration workflow relays the owner-scoped signature | KeeperHub execution `1bce3s44ha57dy1zg7t7z` produced [`ConfigUpdated` transaction `0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) and the plan now reads `691200` seconds |
+| 3. Check in | Sign a heartbeat; the enabled Heartbeat Relay workflow submits it without owner-paid gas | Sponsored [`HeartbeatRecorded` transaction `0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) advanced that same plan |
+| 4. Verify | Open Activity and follow the retained transaction proof | LegacyKeeper reports success only when the KeeperHub execution, successful receipt, expected event, current factory mapping, and resulting plan state agree; the complete [configuration evidence](reports/current-factory-configuration-evidence.json) is retained in-repo |
+
+The deterministic agent is the safety feature: it observes liveness, evaluates
+the owner-signed policy, selects only an allowed action, routes it through
+KeeperHub, and rejects incomplete or contradictory proof.
+
+### Submission proof status
+
+| Surface | Status | Evidence boundary |
+|---|---|---|
+| Wallet-scoped writes | **Four enabled workflows** | Plan creation, configuration, heartbeat, and evacuation are reproducible from [`wallet-scoped-definitions.ts`](workflows/wallet-scoped-definitions.ts) and their [stored exports](workflows/exported/) |
+| Outcome verification | **Fail-closed** | No success without execution ID, transaction hash, successful receipt, expected event, registry match, and resulting state |
+| x402 allowance check | **Settled and consumed** | The address-bound OneSource result returned after a $0.003 USDC payment on Base: [`0x03376097`](https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5) |
+| MPP | **Not demonstrated** | The advertised route required an unfunded Tempo account; no funding was authorized |
+| Private routing | **Not proven** | No request parameter or returned route evidence was available, so LegacyKeeper does not claim it was used |
+
 ## Product Preview
 
 ### Public landing page
@@ -38,7 +61,25 @@ The live release uses Sepolia. Do not connect a wallet that holds mainnet funds.
 
 ![LegacyKeeper wallet dashboard with check-in, verification route, and plan readiness](readme-assets/legacykeeper-dashboard.png)
 
-The dashboard capture uses a seeded test-only Sepolia wallet.
+The dashboard capture uses a test-only injected Sepolia wallet connected to the
+live current-factory plan.
+
+### Verified activity
+
+![LegacyKeeper Activity showing the verified current-factory plan configuration and retained Etherscan proof](readme-assets/legacykeeper-activity.png)
+
+The newest record is the live eight-day grace-period update. Its KeeperHub
+execution, successful receipt, expected `ConfigUpdated("liveness_config")`
+event, consumed authorization nonce, factory mapping, and resulting state are
+retained in the [configuration evidence report](reports/current-factory-configuration-evidence.json).
+
+### Inheritance outcome and tracked assets
+
+![LegacyKeeper dashboard after inheritance with native and ERC-20 distribution states](readme-assets/legacykeeper-inheritance-assets.png)
+
+After inheritance executes, the dashboard replaces check-in controls with the
+verified outcome and shows owner balances, pullable amounts, and distribution
+state for every tracked asset.
 
 ## What Is LegacyKeeper?
 
@@ -60,8 +101,14 @@ factory mapping, and resulting contract state agree.
 - **Editable signed policy.** Beneficiaries, allocations, timing, recovery, and
   tracked assets can be updated after activation without making KeeperHub the
   owner.
+- **Fast test configuration.** A zero-day grace period is accepted with an
+  explicit warning, so a one-day inactivity plan can become eligible without a
+  second recovery delay.
+- **Tracked asset ledger.** The dashboard reads native plan custody, owner ERC-20
+  balances, current pullable amounts, and per-token distribution state onchain.
 - **Inheritance and evacuation.** Inheritance is time-gated and permissionless
-  once eligible. Emergency evacuation requires the separately registered
+  once eligible. After execution, the UI closes check-ins and presents the
+  verified outcome. Emergency evacuation requires the separately registered
   recovery wallet.
 - **Wallet-scoped evidence.** Activity is durable in PostgreSQL, filtered to the
   connected owner in the product UI, and displayed five records per page
@@ -82,6 +129,7 @@ These are real transactions, not illustrative hashes.
 
 | Journey | Transaction | What it proves |
 |---|---|---|
+| Current-factory signed configuration | [`0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) | KeeperHub execution `1bce3s44ha57dy1zg7t7z` updated only the grace period; receipt, event, nonce, registry, owner, and post-state agree |
 | Wallet-scoped sponsored check-in | [`0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) | Dashboard → KeeperHub → `HeartbeatRecorded`, retained for the owner |
 | Inheritance recovered after failures | [`0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) | A later success does not erase the failed route before it |
 | Exact 60/40 inheritance | [`0x6efe67a5`](https://sepolia.etherscan.io/tx/0x6efe67a56e725408785e048eb3a7f1a2598ac70e4cdbbdbdc9cd554cd7d12308) | 0.006 and 0.004 ETH delivered |
@@ -343,8 +391,9 @@ The Phase 7 browser gate is:
 npm --prefix dashboard run test:e2e -- e2e/ui-polish.spec.ts
 ```
 
-The current verified local baseline passes 53 contract tests, 78
-KeeperHub-agent tests, 189 dashboard tests, and the optimized Next.js build.
+The current verified local baseline passes 53 contract tests, 80
+KeeperHub-agent tests, 194 dashboard tests, 14 browser tests, and the optimized
+Next.js build.
 `./verify.sh` is the public repository gate; live-chain claims are checked
 separately against Sepolia.
 

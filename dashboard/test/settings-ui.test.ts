@@ -33,6 +33,16 @@ describe("beneficiary register presentation", () => {
 });
 
 describe("editable plan settings", () => {
+  it("warns that zero grace removes the final recovery window", () => {
+    const editor = source("../components/settings/PlanSettingsEditor.tsx");
+    const onboarding = source("../components/onboarding/OnboardingModal.tsx");
+
+    expect(editor).toContain("Zero grace removes the final recovery window");
+    expect(onboarding).toContain(
+      "Zero grace removes the final recovery window",
+    );
+  });
+
   it("mounts a signed plan settings editor from the settings page", () => {
     const page = source("../app/(application)/settings/page.tsx");
     const editorPath = new URL(

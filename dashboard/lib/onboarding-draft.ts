@@ -50,7 +50,7 @@ export function draftStorageKey(owner: string, chainId: number): string {
 
 export function createOnboardingDraft(
   owner: Address,
-  chainId: number
+  chainId: number,
 ): OnboardingDraft {
   return {
     version: 1,
@@ -72,7 +72,7 @@ export function createOnboardingDraft(
 export function loadOnboardingDraft(
   storage: DraftStorage,
   owner: Address,
-  chainId: number
+  chainId: number,
 ): OnboardingDraft {
   const fallback = createOnboardingDraft(owner, chainId);
   try {
@@ -86,12 +86,12 @@ export function loadOnboardingDraft(
 
 export function saveOnboardingDraft(
   storage: DraftStorage,
-  draft: OnboardingDraft
+  draft: OnboardingDraft,
 ): void {
   try {
     storage.setItem(
       draftStorageKey(draft.owner, draft.chainId),
-      JSON.stringify(safeDraft(draft))
+      JSON.stringify(safeDraft(draft)),
     );
   } catch {
     // Storage may be disabled. The in-memory modal state remains usable.
@@ -101,7 +101,7 @@ export function saveOnboardingDraft(
 export function clearOnboardingDraft(
   storage: DraftStorage,
   owner: Address,
-  chainId: number
+  chainId: number,
 ): void {
   try {
     storage.removeItem(draftStorageKey(owner, chainId));
@@ -113,17 +113,19 @@ export function clearOnboardingDraft(
 export function validateOnboardingStep(
   draft: OnboardingDraft,
   step: number,
-  session?: WalletSession
+  session?: WalletSession,
 ): string[] {
   const steps = step === 6 ? [1, 2, 3, 4, 5] : [step];
-  const errors = steps.flatMap((current) => stepErrors(draft, current, session));
+  const errors = steps.flatMap((current) =>
+    stepErrors(draft, current, session),
+  );
   return [...new Set(errors)];
 }
 
 function stepErrors(
   draft: OnboardingDraft,
   step: number,
-  session?: WalletSession
+  session?: WalletSession,
 ): string[] {
   if (step === 1) return sessionErrors(draft, session);
   if (step === 2) return timingErrors(draft);
@@ -135,10 +137,11 @@ function stepErrors(
 
 function sessionErrors(
   draft: OnboardingDraft,
-  session?: WalletSession
+  session?: WalletSession,
 ): string[] {
   const errors: string[] = [];
-  if (!session?.owner) errors.push('Connect the wallet that will own this plan.');
+  if (!session?.owner)
+    errors.push('Connect the wallet that will own this plan.');
   else if (session.owner.toLowerCase() !== draft.owner.toLowerCase())
     errors.push('Reconnect the wallet that started this draft.');
   if (session?.chainId !== SEPOLIA_CHAIN_ID)
@@ -150,8 +153,8 @@ function timingErrors(draft: OnboardingDraft): string[] {
   const errors: string[] = [];
   if (!Number.isInteger(draft.timeoutDays) || draft.timeoutDays < 1)
     errors.push('Inactivity period must be at least one day.');
-  if (!Number.isInteger(draft.graceDays) || draft.graceDays < 1)
-    errors.push('Grace period must be at least one day.');
+  if (!Number.isInteger(draft.graceDays) || draft.graceDays < 0)
+    errors.push('Grace period cannot be negative.');
   if (draft.graceDays >= draft.timeoutDays)
     errors.push('Grace period must be shorter than the inactivity period.');
   return errors;
@@ -159,8 +162,7 @@ function timingErrors(draft: OnboardingDraft): string[] {
 
 function beneficiaryErrors(beneficiaries: BeneficiaryDraft[]): string[] {
   const errors: string[] = [];
-  if (beneficiaries.length < 1)
-    errors.push('Add at least one beneficiary.');
+  if (beneficiaries.length < 1) errors.push('Add at least one beneficiary.');
   if (beneficiaries.length > 10)
     errors.push('You can add up to 10 beneficiaries.');
   if (beneficiaries.some((item) => !validNonzeroAddress(item.address)))
@@ -173,13 +175,12 @@ function beneficiaryErrors(beneficiaries: BeneficiaryDraft[]): string[] {
       (item) =>
         !Number.isFinite(item.sharePercent) ||
         item.sharePercent <= 0 ||
-        item.sharePercent > 100
+        item.sharePercent > 100,
     )
   )
     errors.push('Each beneficiary share must be between 1% and 100%.');
   const total = beneficiaries.reduce((sum, item) => sum + item.sharePercent, 0);
-  if (total !== 100)
-    errors.push('Beneficiary shares must total exactly 100%.');
+  if (total !== 100) errors.push('Beneficiary shares must total exactly 100%.');
   return errors;
 }
 
@@ -189,11 +190,14 @@ function recoveryErrors(draft: OnboardingDraft): string[] {
   const vault = draft.safeVault.toLowerCase();
   if (!validNonzeroAddress(recovery) || !validNonzeroAddress(vault))
     errors.push('Enter a valid recovery signer and safe vault address.');
-  if (recovery === draft.owner.toLowerCase() || vault === draft.owner.toLowerCase())
+  if (
+    recovery === draft.owner.toLowerCase() ||
+    vault === draft.owner.toLowerCase()
+  )
     errors.push('Recovery addresses cannot be the owner wallet.');
   if (recovery === vault && !draft.allowSharedRecovery)
     errors.push(
-      'A shared recovery signer and vault require explicit acknowledgement.'
+      'A shared recovery signer and vault require explicit acknowledgement.',
     );
   return errors;
 }
@@ -233,7 +237,10 @@ function safeDraft(draft: OnboardingDraft): OnboardingDraft {
   };
 }
 
-function parseDraft(value: unknown, fallback: OnboardingDraft): OnboardingDraft {
+function parseDraft(
+  value: unknown,
+  fallback: OnboardingDraft,
+): OnboardingDraft {
   if (!isRecord(value)) return fallback;
   if (
     value.version !== 1 ||

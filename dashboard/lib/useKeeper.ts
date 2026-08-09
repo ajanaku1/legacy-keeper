@@ -23,6 +23,7 @@ export interface KeeperState {
   timeoutExceeded: boolean;
   graceElapsed: boolean;
   inheritanceExecuted: boolean;
+  inheritanceTimestamp: number;
   evacuationExecuted: boolean;
   safeVault?: string;
   recoveryKey?: string;
@@ -50,6 +51,7 @@ export function useKeeper(planAddress?: Address): KeeperState {
       { ...contract, functionName: "inheritanceExecuted" },
       { ...contract, functionName: "evacuationExecuted" },
       { ...contract, functionName: "getTrackedTokens" },
+      { ...contract, functionName: "inheritanceTimestamp" },
     ],
     query: { enabled: Boolean(planAddress) },
   });
@@ -89,6 +91,7 @@ export function useKeeper(planAddress?: Address): KeeperState {
     timeoutExceeded: Boolean(timeout?.[0]),
     graceElapsed: Boolean(timeout?.[1]),
     inheritanceExecuted: Boolean(read<boolean>(7)),
+    inheritanceTimestamp: Number(read<bigint>(10) ?? 0n),
     evacuationExecuted: Boolean(read<boolean>(8)),
     safeVault: vault?.[0],
     recoveryKey: vault?.[1],

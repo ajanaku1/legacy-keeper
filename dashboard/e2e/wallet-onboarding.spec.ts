@@ -2,6 +2,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 import {
   decodeFunctionData,
   encodeFunctionResult,
+  erc20Abi,
   zeroAddress,
   type Address,
   type Hex,
@@ -13,6 +14,7 @@ const BENEFICIARY = "0x2000000000000000000000000000000000000002" as Address;
 const RECOVERY = "0x3000000000000000000000000000000000000003" as Address;
 const VAULT = "0x4000000000000000000000000000000000000004" as Address;
 const PLAN = "0x5000000000000000000000000000000000000005" as Address;
+const TOKEN = "0x6000000000000000000000000000000000000006" as Address;
 const TX_HASH = `0x${"ab".repeat(32)}` as Hex;
 const SIGNATURE = `0x${"11".repeat(65)}` as Hex;
 const MULTICALL_ABI = [
@@ -43,10 +45,23 @@ const MULTICALL_ABI = [
     ],
   },
 ] as const;
+const MULTICALL_BALANCE_ABI = [
+  {
+    type: "function",
+    name: "getEthBalance",
+    stateMutability: "view",
+    inputs: [{ name: "addr", type: "address" }],
+    outputs: [{ name: "balance", type: "uint256" }],
+  },
+] as const;
 
 interface MockChainState {
   planCreated: boolean;
   heartbeatAt: bigint;
+  inheritanceExecuted?: boolean;
+  inheritanceTimestamp?: bigint;
+  trackedTokens?: Address[];
+  tokenDistributed?: boolean;
 }
 
 test("keeps disconnected visitors on public or locked surfaces", async ({
@@ -54,7 +69,9 @@ test("keeps disconnected visitors on public or locked surfaces", async ({
 }) => {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: /Your continuity plan/i }),
+    page.getByRole("heading", {
+      name: /The continuity agent that acts when you cannot/i,
+    }),
   ).toBeVisible();
   await expect(
     page.getByText("KeeperHub", { exact: true }).first(),
@@ -85,6 +102,41 @@ test("creates one wallet plan, navigates routes, and verifies a check-in", async
   await verifyRouteNavigation(page);
   await verifyCheckIn(page);
   await verifyDisconnect(page);
+});
+
+test("shows tracked balances and replaces check-in after inheritance", async ({
+  page,
+}) => {
+  await installWallet(page);
+  const state: MockChainState = {
+    planCreated: true,
+    heartbeatAt: BigInt(Math.floor(Date.now() / 1_000) - 172_800),
+    inheritanceExecuted: true,
+    inheritanceTimestamp: BigInt(Math.floor(Date.now() / 1_000) - 60),
+    trackedTokens: [TOKEN],
+    tokenDistributed: true,
+  };
+  await mockApplicationNetwork(page, state);
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Inheritance executed" }),
+  ).toBeVisible();
+  await expect(page.getByText("1 of 1 complete")).toBeVisible();
+  await expect(page.getByText("2.5 USDC")).toBeVisible();
+  await expect(page.getByText("Finalized")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check in now" })).toHaveCount(
+    0,
+  );
+  if (process.env.CAPTURE_ASSETS) {
+    await page
+      .getByRole("heading", { name: "Tracked assets" })
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: "/tmp/legacykeeper-inheritance-assets.png",
+    });
+  }
 });
 
 async function completeOnboarding(page: Page): Promise<void> {
@@ -197,8 +249,7 @@ async function completeRecoveryStep(page: Page): Promise<void> {
 }
 
 async function verifyRouteNavigation(page: Page): Promise<void> {
-  await page.getByRole("link", { name: "Beneficiaries", exact: true }).click();
-  await expect(page).toHaveURL(/\/beneficiaries$/);
+  await navigateTo(page, "Beneficiaries", /\/beneficiaries$/);
   await expect(page.getByLabel("Beneficiary 1")).toHaveText("1");
   await expect(
     page.getByRole("heading", { name: "Beneficiaries", exact: true }),
@@ -207,10 +258,9 @@ async function verifyRouteNavigation(page: Page): Promise<void> {
   await expect(
     page.getByText("1 of 10 addresses", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Activity", exact: true }).click();
-  await expect(page).toHaveURL(/\/activity$/);
+  await navigateTo(page, "Activity", /\/activity$/);
   await expect(page.getByText("0 activities", { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await navigateTo(page, "Settings", /\/settings$/);
   await expect(
     page.getByRole("heading", { name: "Plan settings", exact: true }),
   ).toBeVisible();
@@ -235,7 +285,12 @@ async function verifyRouteNavigation(page: Page): Promise<void> {
   const height = (await dialog.boundingBox())?.height;
   await expect(page.getByLabel("Grace period (days)")).toHaveValue("7");
   expect((await dialog.boundingBox())?.height).toBe(height);
-  await page.getByLabel("Grace period (days)").fill("8");
+  await page.getByLabel("Grace period (days)").fill("0");
+  await expect(
+    dialog.getByText("Zero grace removes the final recovery window", {
+      exact: false,
+    }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Review & sign timing" }).click();
   await expect(dialog).toBeHidden();
   await expect(
@@ -251,7 +306,18 @@ async function verifyRouteNavigation(page: Page): Promise<void> {
     review.getByText("Required signer", { exact: false }).first(),
   ).toBeVisible();
   await page.keyboard.press("Escape");
-  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await navigateTo(page, "Dashboard", /\/dashboard$/);
+}
+
+async function navigateTo(
+  page: Page,
+  name: string,
+  destination: RegExp,
+): Promise<void> {
+  await Promise.all([
+    page.waitForURL(destination, { timeout: 15_000 }),
+    page.getByRole("link", { name, exact: true }).click(),
+  ]);
 }
 
 async function verifyCheckIn(page: Page): Promise<void> {
@@ -400,6 +466,7 @@ function rpcResult(request: RpcRequest, state: MockChainState): unknown {
   if (request.method === "eth_chainId") return "0xaa36a7";
   if (request.method === "eth_blockNumber") return "0x100";
   if (request.method === "eth_getCode") return "0x60006000";
+  if (request.method === "eth_getBalance") return "0x0";
   if (request.method !== "eth_call") return "0x0";
   const call = request.params?.[0] as { data?: Hex } | undefined;
   if (!call?.data) return "0x";
@@ -410,9 +477,9 @@ function rpcResult(request: RpcRequest, state: MockChainState): unknown {
 function multicallResult(data: Hex, state: MockChainState): Hex {
   const decoded = decodeFunctionData({ abi: MULTICALL_ABI, data });
   const calls = decoded.args[0];
-  const result = calls.map(({ callData }) => ({
+  const result = calls.map(({ target, callData }) => ({
     success: true,
-    returnData: contractReadResult(callData, state),
+    returnData: contractReadResult(target, callData, state),
   }));
   return encodeFunctionResult({
     abi: MULTICALL_ABI,
@@ -421,9 +488,22 @@ function multicallResult(data: Hex, state: MockChainState): Hex {
   });
 }
 
-function contractReadResult(data: Hex, state: MockChainState): Hex {
+function contractReadResult(
+  target: Address,
+  data: Hex,
+  state: MockChainState,
+): Hex {
   if (data.startsWith("0x94a78483")) return planOfResult(state);
-  return keeperReadResult(data, state.heartbeatAt);
+  if (data.startsWith("0x4d2301cc")) {
+    return encodeFunctionResult({
+      abi: MULTICALL_BALANCE_ABI,
+      functionName: "getEthBalance",
+      result: 0n,
+    });
+  }
+  if (target.toLowerCase() === TOKEN.toLowerCase())
+    return tokenReadResult(data);
+  return keeperReadResult(data, state);
 }
 
 function planOfResult(state: MockChainState): Hex {
@@ -434,14 +514,14 @@ function planOfResult(state: MockChainState): Hex {
   });
 }
 
-function keeperReadResult(data: Hex, heartbeatAt: bigint): Hex {
+function keeperReadResult(data: Hex, state: MockChainState): Hex {
   const decoded = decodeFunctionData({ abi: legacyKeeperAbi, data });
   switch (decoded.functionName) {
     case "owner":
       return encodeKeeperResult("owner", OWNER);
     case "getLivenessStatus":
       return encodeKeeperResult("getLivenessStatus", [
-        heartbeatAt,
+        state.heartbeatAt,
         30n,
         true,
         false,
@@ -453,7 +533,7 @@ function keeperReadResult(data: Hex, heartbeatAt: bigint): Hex {
         86_400n,
         5_184_000n,
         604_800n,
-        heartbeatAt,
+        state.heartbeatAt,
         true,
       ]);
     case "vault":
@@ -465,14 +545,55 @@ function keeperReadResult(data: Hex, heartbeatAt: bigint): Hex {
     case "totalShareBps":
       return encodeKeeperResult("totalShareBps", 10_000);
     case "inheritanceExecuted":
-      return encodeKeeperResult("inheritanceExecuted", false);
+      return encodeKeeperResult(
+        "inheritanceExecuted",
+        Boolean(state.inheritanceExecuted),
+      );
+    case "inheritanceTimestamp":
+      return encodeKeeperResult(
+        "inheritanceTimestamp",
+        state.inheritanceTimestamp ?? 0n,
+      );
     case "evacuationExecuted":
       return encodeKeeperResult("evacuationExecuted", false);
     case "getTrackedTokens":
-      return encodeKeeperResult("getTrackedTokens", []);
+      return encodeKeeperResult("getTrackedTokens", state.trackedTokens ?? []);
+    case "pullableAmount":
+      return encodeKeeperResult("pullableAmount", 1_000_000n);
+    case "tokenDistributed":
+      return encodeKeeperResult(
+        "tokenDistributed",
+        Boolean(state.tokenDistributed),
+      );
     default:
       throw new Error(`Unsupported keeper read: ${decoded.functionName}`);
   }
+}
+
+function tokenReadResult(data: Hex): Hex {
+  const decoded = decodeFunctionData({ abi: erc20Abi, data });
+  if (decoded.functionName === "symbol") {
+    return encodeFunctionResult({
+      abi: erc20Abi,
+      functionName: "symbol",
+      result: "USDC",
+    });
+  }
+  if (decoded.functionName === "decimals") {
+    return encodeFunctionResult({
+      abi: erc20Abi,
+      functionName: "decimals",
+      result: 6,
+    });
+  }
+  if (decoded.functionName === "balanceOf") {
+    return encodeFunctionResult({
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      result: 2_500_000n,
+    });
+  }
+  throw new Error(`Unsupported token read: ${decoded.functionName}`);
 }
 
 function encodeKeeperResult(functionName: string, result: unknown): Hex {

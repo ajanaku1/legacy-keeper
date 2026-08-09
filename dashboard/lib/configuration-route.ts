@@ -10,6 +10,7 @@ import {
   requiredAddress,
   requiredBoolean,
   requiredInteger,
+  requiredNonNegativeInteger,
   requiredString,
   sameAddress,
 } from './action-validation';
@@ -19,10 +20,7 @@ import type {
 } from './heartbeat-route';
 
 export type ConfigurationAction =
-  | 'beneficiaries'
-  | 'liveness'
-  | 'recovery'
-  | 'trackedTokens';
+  'beneficiaries' | 'liveness' | 'recovery' | 'trackedTokens';
 
 export type ConfigurationPayload =
   | { wallets: Address[]; shares: number[] }
@@ -54,18 +52,18 @@ export interface ConfigurationDependencies {
   readPlanOwner: (plan: Address) => Promise<Address>;
   readExpectedSigner: (
     plan: Address,
-    action: ConfigurationAction
+    action: ConfigurationAction,
   ) => Promise<Address>;
   recoverSigner: (request: ConfigurationRequest) => Promise<Address>;
   nextIdempotencyKey: () => string;
   submitToKeeperHub: (
     request: ConfigurationRequest,
-    idempotencyKey: string
+    idempotencyKey: string,
   ) => Promise<KeeperHubSubmission>;
   awaitSettlement: (executionId: string) => Promise<KeeperHubSettlement>;
   verifyOnchain: (
     request: ConfigurationRequest,
-    txHash: `0x${string}`
+    txHash: `0x${string}`,
   ) => Promise<ConfigurationProof>;
 }
 
@@ -92,7 +90,9 @@ const REQUEST_FIELDS = [
   'signature',
 ] as const;
 
-export function parseConfigurationRequest(value: unknown): ConfigurationRequest {
+export function parseConfigurationRequest(
+  value: unknown,
+): ConfigurationRequest {
   const request = exactObject(value, REQUEST_FIELDS, 'Configuration request');
   const action = parseAction(request.action);
   return {
@@ -109,25 +109,37 @@ export function parseConfigurationRequest(value: unknown): ConfigurationRequest 
 
 export async function executeConfiguration(
   rawRequest: ConfigurationRequest,
-  deps: ConfigurationDependencies
+  deps: ConfigurationDependencies,
 ): Promise<VerifiedConfigurationEvidence> {
   const request = parseConfigurationRequest(rawRequest);
   assertSepolia(request.chainId);
   assertSigningDeadline(request.deadline, deps.nowSeconds());
   const registeredPlan = await deps.readRegisteredPlan(request.owner);
   if (!sameAddress(registeredPlan, request.plan)) {
-    throw new ActionError('PLAN_MISMATCH', 'Factory registry does not match this plan.');
+    throw new ActionError(
+      'PLAN_MISMATCH',
+      'Factory registry does not match this plan.',
+    );
   }
   const planOwner = await deps.readPlanOwner(request.plan);
   if (!sameAddress(planOwner, request.owner)) {
-    throw new ActionError('WRONG_OWNER', 'The connected wallet does not own this plan.');
+    throw new ActionError(
+      'WRONG_OWNER',
+      'The connected wallet does not own this plan.',
+    );
   }
-  const expectedSigner = await deps.readExpectedSigner(request.plan, request.action);
+  const expectedSigner = await deps.readExpectedSigner(
+    request.plan,
+    request.action,
+  );
   assertSigner(await deps.recoverSigner(request), expectedSigner);
   const idempotencyKey = deps.nextIdempotencyKey();
   const submission = await deps.submitToKeeperHub(request, idempotencyKey);
   if (!submission.executionId) {
-    throw new ActionError('KEEPERHUB_REJECTED', 'KeeperHub returned no execution ID.');
+    throw new ActionError(
+      'KEEPERHUB_REJECTED',
+      'KeeperHub returned no execution ID.',
+    );
   }
   const executionEvidence = { executionId: submission.executionId };
   const settlement = await withActionEvidence(executionEvidence, async () => {
@@ -148,10 +160,10 @@ export async function executeConfiguration(
       ) {
         throw new ActionError(
           'UNVERIFIED_RESULT',
-          'Receipt, configuration event, and resulting state did not agree.'
+          'Receipt, configuration event, and resulting state did not agree.',
         );
       }
-    }
+    },
   );
   return {
     stage: 'verified',
@@ -175,12 +187,15 @@ function parseAction(value: unknown): ConfigurationAction {
   ) {
     return value;
   }
-  throw new ActionError('INVALID_REQUEST', 'Configuration action is unsupported.');
+  throw new ActionError(
+    'INVALID_REQUEST',
+    'Configuration action is unsupported.',
+  );
 }
 
 function parsePayload(
   action: ConfigurationAction,
-  value: unknown
+  value: unknown,
 ): ConfigurationPayload {
   if (action === 'beneficiaries') return parseBeneficiaries(value);
   if (action === 'liveness') return parseLiveness(value);
@@ -192,14 +207,28 @@ function parsePayload(
 }
 
 function parseBeneficiaries(value: unknown): ConfigurationPayload {
-  const payload = exactObject(value, ['wallets', 'shares'], 'Beneficiary payload');
+  const payload = exactObject(
+    value,
+    ['wallets', 'shares'],
+    'Beneficiary payload',
+  );
   const wallets = addressList(payload.wallets, 'beneficiary');
   const shares = integerList(payload.shares, 'beneficiary share');
-  if (wallets.length !== shares.length || wallets.length < 1 || wallets.length > 10) {
-    throw new ActionError('INVALID_REQUEST', 'Add 1 to 10 matching beneficiary shares.');
+  if (
+    wallets.length !== shares.length ||
+    wallets.length < 1 ||
+    wallets.length > 10
+  ) {
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Add 1 to 10 matching beneficiary shares.',
+    );
   }
   if (shares.reduce((total, share) => total + share, 0) !== 10_000) {
-    throw new ActionError('INVALID_REQUEST', 'Beneficiary shares must total 10,000 bps.');
+    throw new ActionError(
+      'INVALID_REQUEST',
+      'Beneficiary shares must total 10,000 bps.',
+    );
   }
   assertUniqueAddresses(wallets, 'beneficiary');
   return { wallets, shares };
@@ -209,12 +238,18 @@ function parseLiveness(value: unknown): ConfigurationPayload {
   const payload = exactObject(
     value,
     ['heartbeatInterval', 'timeoutDuration', 'gracePeriod'],
-    'Liveness payload'
+    'Liveness payload',
   );
   return {
-    heartbeatInterval: requiredInteger(payload.heartbeatInterval, 'heartbeatInterval'),
-    timeoutDuration: requiredInteger(payload.timeoutDuration, 'timeoutDuration'),
-    gracePeriod: requiredInteger(payload.gracePeriod, 'gracePeriod'),
+    heartbeatInterval: requiredInteger(
+      payload.heartbeatInterval,
+      'heartbeatInterval',
+    ),
+    timeoutDuration: requiredInteger(
+      payload.timeoutDuration,
+      'timeoutDuration',
+    ),
+    gracePeriod: requiredNonNegativeInteger(payload.gracePeriod, 'gracePeriod'),
   };
 }
 
@@ -222,14 +257,14 @@ function parseRecovery(value: unknown): ConfigurationPayload {
   const payload = exactObject(
     value,
     ['recoveryKey', 'safeVault', 'allowSharedRecovery'],
-    'Recovery payload'
+    'Recovery payload',
   );
   return {
     recoveryKey: requiredAddress(payload.recoveryKey, 'recoveryKey'),
     safeVault: requiredAddress(payload.safeVault, 'safeVault'),
     allowSharedRecovery: requiredBoolean(
       payload.allowSharedRecovery,
-      'allowSharedRecovery'
+      'allowSharedRecovery',
     ),
   };
 }

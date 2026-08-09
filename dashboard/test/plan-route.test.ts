@@ -7,10 +7,7 @@ import {
   type PlanCreationDependencies,
   type PlanCreationRequest,
 } from '../lib/plan-route';
-import {
-  hashPlanConfig,
-  planCreationTypedData,
-} from '../lib/intent-signer';
+import { hashPlanConfig, planCreationTypedData } from '../lib/intent-signer';
 import { buildPlanCreationRequest } from '../lib/plan-client';
 import { createOnboardingDraft } from '../lib/onboarding-draft';
 
@@ -44,14 +41,14 @@ function request(): PlanCreationRequest {
 }
 
 function dependencies(
-  overrides: Partial<PlanCreationDependencies> = {}
+  overrides: Partial<PlanCreationDependencies> = {},
 ): PlanCreationDependencies {
   return {
     nowSeconds: () => 1000,
     factoryAddress: FACTORY,
-    readRegisteredPlan: vi.fn().mockResolvedValue(
-      '0x0000000000000000000000000000000000000000'
-    ),
+    readRegisteredPlan: vi
+      .fn()
+      .mockResolvedValue('0x0000000000000000000000000000000000000000'),
     recoverSigner: vi.fn().mockResolvedValue(OWNER),
     nextIdempotencyKey: vi.fn().mockReturnValue('plan-attempt-1'),
     submitToKeeperHub: vi.fn().mockResolvedValue({ executionId: 'kh_plan_1' }),
@@ -74,22 +71,36 @@ function dependencies(
 }
 
 describe('plan creation route boundary', () => {
+  it('accepts a zero grace period in a reviewed creation intent', () => {
+    const zeroGraceRequest = {
+      ...request(),
+      config: { ...request().config, timeoutDuration: 86_400, gracePeriod: 0 },
+    };
+
+    expect(parsePlanCreationRequest(zeroGraceRequest)).toEqual(
+      zeroGraceRequest,
+    );
+  });
+
   it('accepts only the reviewed creation intent fields', () => {
     expect(parsePlanCreationRequest(request())).toEqual(request());
     expect(() =>
-      parsePlanCreationRequest({ ...request(), apiKey: 'must-stay-server-side' })
+      parsePlanCreationRequest({
+        ...request(),
+        apiKey: 'must-stay-server-side',
+      }),
     ).toThrow(/unexpected field/i);
     expect(() =>
       parsePlanCreationRequest({
         ...request(),
         config: { ...request().config, beneficiaryShares: [9000] },
-      })
+      }),
     ).toThrow(/10,000/i);
     expect(() =>
       parsePlanCreationRequest({
         ...request(),
         config: { ...request().config, allowSharedRecovery: 'false' },
-      })
+      }),
     ).toThrow(/allowSharedRecovery.*boolean/i);
     expect(() =>
       parsePlanCreationRequest({
@@ -99,7 +110,7 @@ describe('plan creation route boundary', () => {
           beneficiaryWallets: [BENEFICIARY, BENEFICIARY],
           beneficiaryShares: [5000, 5000],
         },
-      })
+      }),
     ).toThrow(/duplicate beneficiar/i);
   });
 
@@ -108,14 +119,14 @@ describe('plan creation route boundary', () => {
     await expect(
       executePlanCreation(
         { ...request(), chainId: 1 },
-        dependencies({ submitToKeeperHub })
-      )
+        dependencies({ submitToKeeperHub }),
+      ),
     ).rejects.toMatchObject({ code: 'WRONG_NETWORK' });
     await expect(
       executePlanCreation(
         { ...request(), deadline: '999' },
-        dependencies({ submitToKeeperHub })
-      )
+        dependencies({ submitToKeeperHub }),
+      ),
     ).rejects.toMatchObject({ code: 'SIGNATURE_EXPIRED' });
     await expect(
       executePlanCreation(
@@ -123,8 +134,8 @@ describe('plan creation route boundary', () => {
         dependencies({
           submitToKeeperHub,
           readRegisteredPlan: vi.fn().mockResolvedValue(PLAN),
-        })
-      )
+        }),
+      ),
     ).rejects.toMatchObject({ code: 'PLAN_ALREADY_EXISTS' });
     expect(submitToKeeperHub).not.toHaveBeenCalled();
   });
@@ -147,7 +158,7 @@ describe('plan creation route boundary', () => {
 
     expect(deps.submitToKeeperHub).toHaveBeenCalledWith(
       request(),
-      'plan-attempt-1'
+      'plan-attempt-1',
     );
   });
 
@@ -213,7 +224,7 @@ describe('plan creation typed intent', () => {
     const signature = await account.signTypedData(typedData);
 
     await expect(
-      recoverTypedDataAddress({ ...typedData, signature })
+      recoverTypedDataAddress({ ...typedData, signature }),
     ).resolves.toBe(account.address);
   });
 

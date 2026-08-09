@@ -3,15 +3,20 @@
 import Link from 'next/link';
 import { PageHeader } from '@/components/application/PageHeader';
 import { HeartbeatPanel } from '@/components/HeartbeatPanel';
+import { InheritanceOutcome } from '@/components/InheritanceOutcome';
 import { PlanNotice } from '@/components/application/PlanNotice';
 import { useApplication } from '@/components/shell/ApplicationShell';
+import { TrackedAssets } from '@/components/TrackedAssets';
 import { formatCountdown, shortAddress } from '@/lib/format';
 import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
+import { useTrackedAssets } from '@/lib/useTrackedAssets';
 
 export default function DashboardPage() {
   const app = useApplication();
   const { keeper, resolution } = app;
   const resolved = resolution.status === 'resolved';
+  const plan = resolved ? resolution.plan : undefined;
+  const assets = useTrackedAssets(plan, keeper.owner, keeper.trackedTokens);
 
   return (
     <>
@@ -26,22 +31,34 @@ export default function DashboardPage() {
         }
       />
       <PlanNotice />
-      <HeartbeatPanel
-        state={{
-          connected: app.connected,
-          chainId: app.chainId,
-          ownerAddress: app.address,
-          plan: resolved ? resolution.plan : undefined,
-          planOwner: keeper.owner,
-          livenessActive: keeper.livenessActive,
-          inheritanceExecuted: keeper.inheritanceExecuted,
-          evacuationExecuted: keeper.evacuationExecuted,
-          secondsUntilDue: keeper.secondsUntilDue,
-          lastHeartbeat: keeper.lastHeartbeat,
-        }}
-        onVerified={keeper.refetch}
-      />
+      {keeper.inheritanceExecuted ? (
+        <InheritanceOutcome
+          executedAt={keeper.inheritanceTimestamp}
+          beneficiaryCount={keeper.beneficiaries.length}
+          assets={assets}
+        />
+      ) : (
+        <HeartbeatPanel
+          state={{
+            connected: app.connected,
+            chainId: app.chainId,
+            ownerAddress: app.address,
+            plan,
+            planOwner: keeper.owner,
+            livenessActive: keeper.livenessActive,
+            inheritanceExecuted: keeper.inheritanceExecuted,
+            evacuationExecuted: keeper.evacuationExecuted,
+            secondsUntilDue: keeper.secondsUntilDue,
+            lastHeartbeat: keeper.lastHeartbeat,
+          }}
+          onVerified={keeper.refetch}
+        />
+      )}
       <PlanReadiness keeper={keeper} resolution={resolution} />
+      <TrackedAssets
+        state={assets}
+        inheritanceExecuted={keeper.inheritanceExecuted}
+      />
       <DashboardActions />
     </>
   );
@@ -73,9 +90,7 @@ function PlanReadiness({
         </div>
         <div>
           <span>Recovery eligibility</span>
-          <strong>
-            {resolved ? formatCountdown(keeper.secondsUntilDue) : 'Not set'}
-          </strong>
+          <strong>{recoveryEligibility(keeper, resolved)}</strong>
         </div>
         <div>
           <span>Beneficiary total</span>
@@ -105,7 +120,7 @@ function PlanReadiness({
         <RegisterRow
           label="Tracked assets"
           evidence="Allowance or permit state"
-          ready={false}
+          ready={keeper.trackedTokens.length > 0}
           optional
         />
       </div>
@@ -149,11 +164,7 @@ interface RegisterRowProps {
 }
 
 function RegisterRow(props: RegisterRowProps) {
-  const status = props.optional
-    ? 'Optional'
-    : props.ready
-      ? 'Ready'
-      : 'Missing';
+  const status = registerStatus(props);
   return (
     <div className="register-row" role="row">
       <span role="cell">{props.label}</span>
@@ -166,13 +177,28 @@ function RegisterRow(props: RegisterRowProps) {
   );
 }
 
+function registerStatus(props: RegisterRowProps): string {
+  if (props.ready) return 'Ready';
+  return props.optional ? 'Optional' : 'Missing';
+}
+
 function planState(
   keeper: ReturnType<typeof useApplication>['keeper'],
-  resolved: boolean
+  resolved: boolean,
 ): string {
   if (!resolved) return 'Configuration required';
   if (keeper.evacuationExecuted) return 'Assets evacuated';
   if (keeper.inheritanceExecuted) return 'Estate distributed';
   if (!keeper.livenessActive) return 'Plan paused';
   return keeper.loading ? 'Reading chain state' : 'Protected';
+}
+
+function recoveryEligibility(
+  keeper: ReturnType<typeof useApplication>['keeper'],
+  resolved: boolean,
+): string {
+  if (!resolved) return 'Not set';
+  if (keeper.inheritanceExecuted) return 'Executed';
+  if (keeper.evacuationExecuted) return 'Closed';
+  return formatCountdown(keeper.secondsUntilDue);
 }

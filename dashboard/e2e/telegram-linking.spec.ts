@@ -246,6 +246,7 @@ function keeperReadResult(data: Hex): Hex {
     getBeneficiaries: [{ wallet: BENEFICIARY, shareBps: 10_000 }],
     totalShareBps: 10_000,
     inheritanceExecuted: false,
+    inheritanceTimestamp: 0n,
     evacuationExecuted: false,
     getTrackedTokens: [],
   };

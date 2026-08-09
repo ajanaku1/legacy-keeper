@@ -32,4 +32,42 @@ describe("dashboard information hierarchy", () => {
       /\.dashboard-readiness\s*\{[^}]*margin-top:\s*var\(--space-4\)/s,
     );
   });
+
+  it("keeps tracked balances in the dashboard context instead of a new route", () => {
+    const page = readFileSync(
+      new URL("../app/(application)/dashboard/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const assets = readFileSync(
+      new URL("../components/TrackedAssets.tsx", import.meta.url),
+      "utf8",
+    );
+    const navigation = readFileSync(
+      new URL("../components/shell/Sidebar.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(page).toContain("<TrackedAssets");
+    expect(assets).toContain("Owner balance");
+    expect(assets).toContain("Available to inherit");
+    expect(navigation).not.toContain("/assets");
+  });
+
+  it("replaces check-in controls with a clear inheritance outcome", () => {
+    const page = readFileSync(
+      new URL("../app/(application)/dashboard/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const outcome = readFileSync(
+      new URL("../components/InheritanceOutcome.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(page).toContain("<InheritanceOutcome");
+    expect(outcome).toContain("Inheritance executed");
+    expect(outcome).toContain("Token distributions");
+    expect(outcome).toContain('href="/activity"');
+    expect(page).toContain("recoveryEligibility(keeper, resolved)");
+    expect(page).toContain("if (keeper.inheritanceExecuted) return 'Executed'");
+  });
 });

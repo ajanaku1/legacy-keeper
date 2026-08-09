@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-} from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import {
   validateOnboardingStep,
   type AssetDraft,
@@ -58,7 +53,7 @@ export function OnboardingModal(props: OnboardingModalProps) {
   const errors = validateOnboardingStep(
     props.draft,
     props.draft.step,
-    props.session
+    props.session,
   );
   const createPlan = async () => {
     setCreating(true);
@@ -71,7 +66,7 @@ export function OnboardingModal(props: OnboardingModalProps) {
       }
     } catch (error) {
       setCreationError(
-        error instanceof Error ? error.message : 'Plan creation failed.'
+        error instanceof Error ? error.message : 'Plan creation failed.',
       );
     } finally {
       setCreating(false);
@@ -163,7 +158,9 @@ function StepContent({
 }) {
   switch (editor.draft.step) {
     case 1:
-      return <WelcomeStep editor={editor} session={session} actions={actions} />;
+      return (
+        <WelcomeStep editor={editor} session={session} actions={actions} />
+      );
     case 2:
       return <TimingStep editor={editor} />;
     case 3:
@@ -205,12 +202,20 @@ function WelcomeStep({
         </StatusLine>
       </div>
       {!connected && (
-        <button className="secondary" type="button" onClick={actions.connectWallet}>
+        <button
+          className="secondary"
+          type="button"
+          onClick={actions.connectWallet}
+        >
           Connect wallet
         </button>
       )}
       {connected && !onSepolia && (
-        <button className="secondary" type="button" onClick={actions.switchToSepolia}>
+        <button
+          className="secondary"
+          type="button"
+          onClick={actions.switchToSepolia}
+        >
           Switch to Sepolia
         </button>
       )}
@@ -236,7 +241,9 @@ function TimingStep({ editor }: { editor: StepEditor }) {
           {presets.map((days) => (
             <button
               type="button"
-              className={editor.draft.timeoutDays === days ? 'choice active' : 'choice'}
+              className={
+                editor.draft.timeoutDays === days ? 'choice active' : 'choice'
+              }
               aria-pressed={editor.draft.timeoutDays === days}
               onClick={() => editor.change({ timeoutDays: days })}
               key={days}
@@ -264,6 +271,12 @@ function TimingStep({ editor }: { editor: StepEditor }) {
         Last check-in → {editor.draft.timeoutDays} days inactive →{' '}
         {editor.draft.graceDays}-day grace → inheritance eligible
       </p>
+      {editor.draft.graceDays === 0 && (
+        <p className="warning-note">
+          Zero grace removes the final recovery window. Inheritance becomes
+          callable as soon as inactivity expires and may already be callable.
+        </p>
+      )}
     </section>
   );
 }
@@ -271,7 +284,7 @@ function TimingStep({ editor }: { editor: StepEditor }) {
 function BeneficiariesStep({ editor }: { editor: StepEditor }) {
   const total = editor.draft.beneficiaries.reduce(
     (sum, item) => sum + item.sharePercent,
-    0
+    0,
   );
   return (
     <section className="step-panel">
@@ -304,7 +317,11 @@ function BeneficiariesStep({ editor }: { editor: StepEditor }) {
       >
         + Add beneficiary
       </button>
-      <p className={total === 100 ? 'allocation-total verified' : 'allocation-total'}>
+      <p
+        className={
+          total === 100 ? 'allocation-total verified' : 'allocation-total'
+        }
+      >
         Allocated: {total}% / 100%
       </p>
     </section>
@@ -322,14 +339,14 @@ function BeneficiaryRow({
 }) {
   const update = (patch: Partial<BeneficiaryDraft>) => {
     const beneficiaries = editor.draft.beneficiaries.map((entry, position) =>
-      position === index ? { ...entry, ...patch } : entry
+      position === index ? { ...entry, ...patch } : entry,
     );
     editor.change({ beneficiaries });
   };
   const remove = () =>
     editor.change({
       beneficiaries: editor.draft.beneficiaries.filter(
-        (_entry, position) => position !== index
+        (_entry, position) => position !== index,
       ),
     });
   return (
@@ -440,11 +457,12 @@ function AssetsStep({ editor }: { editor: StepEditor }) {
         />
         <span>Include a separate native ETH transfer after plan creation.</span>
       </label>
-      {editor.draft.assets.length === 0 && !editor.draft.includeNativeFunding && (
-        <p className="warning-note">
-          An unfunded plan records your rules but protects no assets.
-        </p>
-      )}
+      {editor.draft.assets.length === 0 &&
+        !editor.draft.includeNativeFunding && (
+          <p className="warning-note">
+            An unfunded plan records your rules but protects no assets.
+          </p>
+        )}
     </section>
   );
 }
@@ -460,7 +478,7 @@ function AssetRow({
 }) {
   const update = (patch: Partial<AssetDraft>) => {
     const assets = editor.draft.assets.map((entry, position) =>
-      position === index ? { ...entry, ...patch } : entry
+      position === index ? { ...entry, ...patch } : entry,
     );
     editor.change({ assets });
   };
@@ -486,7 +504,8 @@ function AssetRow({
           value={asset.permitReadiness}
           onChange={(event) =>
             update({
-              permitReadiness: event.target.value as AssetDraft['permitReadiness'],
+              permitReadiness: event.target
+                .value as AssetDraft['permitReadiness'],
             })
           }
         >
@@ -520,11 +539,19 @@ function ReviewStep({ draft }: { draft: OnboardingDraft }) {
         <ReviewLine label="Safe vault" value={draft.safeVault} />
         <ReviewLine
           label="Assets"
-          value={draft.assets.length ? `${draft.assets.length} tracked tokens` : 'None yet'}
+          value={
+            draft.assets.length
+              ? `${draft.assets.length} tracked tokens`
+              : 'None yet'
+          }
         />
         <ReviewLine
           label="Native ETH"
-          value={draft.includeNativeFunding ? 'Separate transfer planned' : 'Not included'}
+          value={
+            draft.includeNativeFunding
+              ? 'Separate transfer planned'
+              : 'Not included'
+          }
         />
       </dl>
       <p className="trust-note">
@@ -584,7 +611,8 @@ function ModalFooter({
 }) {
   const atReview = draft.step === 6;
   const verified = creation?.stage === 'verified';
-  const disabled = errors.length > 0 || creating || (atReview && !creationAvailable);
+  const disabled =
+    errors.length > 0 || creating || (atReview && !creationAvailable);
   const reason =
     creationError ||
     errors[0] ||
@@ -594,7 +622,9 @@ function ModalFooter({
   let primaryLabel = 'Continue';
   let primaryAction = () => change({ step: draft.step + 1 });
   if (atReview) {
-    primaryLabel = creating ? 'Waiting for verification' : 'Sign and create plan';
+    primaryLabel = creating
+      ? 'Waiting for verification'
+      : 'Sign and create plan';
     primaryAction = createPlan;
   }
   if (draft.step === 7) {
@@ -620,14 +650,23 @@ function ModalFooter({
         >
           {primaryLabel}
         </button>
-        {reason && <p className="disabled-reason" role="status">{reason}</p>}
+        {reason && (
+          <p className="disabled-reason" role="status">
+            {reason}
+          </p>
+        )}
       </div>
     </footer>
   );
 }
 
 function StepIntro({ title, body }: { title: string; body: string }) {
-  return <div className="step-intro"><h2>{title}</h2><p>{body}</p></div>;
+  return (
+    <div className="step-intro">
+      <h2>{title}</h2>
+      <p>{body}</p>
+    </div>
+  );
 }
 
 function StatusLine({
@@ -639,11 +678,23 @@ function StatusLine({
   ready: boolean;
   children: React.ReactNode;
 }) {
-  return <div><span>{label}</span><strong className={ready ? 'verified' : ''}>{ready ? '●' : '○'} {children}</strong></div>;
+  return (
+    <div>
+      <span>{label}</span>
+      <strong className={ready ? 'verified' : ''}>
+        {ready ? '●' : '○'} {children}
+      </strong>
+    </div>
+  );
 }
 
 function ReviewLine({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value || 'Not set'}</dd></div>;
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value || 'Not set'}</dd>
+    </div>
+  );
 }
 
 function TextField(props: {
@@ -678,14 +729,20 @@ function NumberField(props: {
   return (
     <label className="form-field" htmlFor={props.id}>
       <span>{props.label}</span>
-      <input id={props.id} type="number" min="0" value={props.value} onChange={onChange} />
+      <input
+        id={props.id}
+        type="number"
+        min="0"
+        value={props.value}
+        onChange={onChange}
+      />
     </label>
   );
 }
 
 function useDialogFocus(
   dialogRef: React.RefObject<HTMLDivElement | null>,
-  dismiss: () => void
+  dismiss: () => void,
 ) {
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -710,7 +767,7 @@ function useDialogFocus(
 
 function containFocus(event: KeyboardEvent, dialog: HTMLElement) {
   const controls = dialog.querySelectorAll<HTMLElement>(
-    'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
   );
   const first = controls[0];
   const last = controls[controls.length - 1];
