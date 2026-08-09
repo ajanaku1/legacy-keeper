@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { PRODUCT_POSITIONING } from "./product-positioning";
 import type { TelegramWalletLinkRecord } from "./telegram-repository";
 
 export interface TelegramUpdate {
@@ -70,7 +71,8 @@ export interface TelegramBotDependencies {
 }
 
 const HELP_TEXT = [
-  "LegacyKeeper security commands:",
+  `LegacyKeeper · ${PRODUCT_POSITIONING.category}`,
+  "Security commands:",
   "/wallets — linked wallets and notification state",
   "/status — plan monitoring status",
   "/evacuate — open secure recovery authorization",

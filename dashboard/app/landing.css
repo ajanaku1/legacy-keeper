@@ -501,8 +501,13 @@
 }
 
 .architecture-section {
-  grid-template-columns: minmax(320px, 0.75fr) minmax(0, 1.25fr);
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  grid-template-areas: "register heading";
   align-items: start;
+}
+
+.architecture-section .landing-section-heading {
+  grid-area: heading;
 }
 
 .landing-section-heading {
@@ -525,6 +530,7 @@
 }
 
 .architecture-register {
+  grid-area: register;
   margin: 0;
   padding: 0;
   border-top: 1px solid var(--border);
@@ -757,12 +763,18 @@
 }
 
 .telegram-section {
-  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
+  grid-template-areas: "heading proof";
   align-items: center;
   border-top: 1px solid var(--border-soft);
 }
 
+.telegram-section .landing-section-heading {
+  grid-area: heading;
+}
+
 .telegram-proof-panel {
+  grid-area: proof;
   overflow: hidden;
   border: 1px solid rgba(34, 158, 217, 0.48);
   border-radius: var(--radius-l);
@@ -1161,16 +1173,24 @@
     grid-template-columns: 1fr;
   }
 
+  .architecture-section {
+    grid-template-areas:
+      "heading"
+      "register";
+  }
+
+  .telegram-section {
+    grid-template-areas:
+      "heading"
+      "proof";
+  }
+
   .landing-section-heading {
     position: static;
   }
 
   .control-visual {
     order: 2;
-  }
-
-  .telegram-section .landing-section-heading {
-    order: -1;
   }
 }
 

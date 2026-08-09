@@ -126,6 +126,42 @@ describe("editable plan settings", () => {
     expect(telegram).toBeGreaterThan(review);
   });
 
+  it("places a destructive stop-plan action at the end of settings", () => {
+    const editor = source("../components/settings/PlanSettingsEditor.tsx");
+    const telegram = editor.indexOf("<TelegramLinkPanel />");
+    const danger = editor.indexOf("<DeletePlanSection");
+
+    expect(danger).toBeGreaterThan(telegram);
+    expect(editor).toContain("Stop plan");
+    expect(editor).toContain("Stop this plan");
+    expect(editor).toContain("Stopping plan…");
+    expect(editor).toContain('STOP_PLAN_CONFIRMATION = "STOP"');
+    expect(editor).toContain("Stopping the plan failed.");
+    expect(editor).not.toContain('"Delete plan"');
+    expect(editor).not.toContain("Delete this plan");
+    expect(editor).not.toContain("Plan deletion failed.");
+    expect(editor).toContain("<DeletePlanDialog");
+  });
+
+  it("requires explicit confirmation and accurately preserves onchain history", () => {
+    const editor = source("../components/settings/PlanSettingsEditor.tsx");
+
+    expect(editor).toContain('STOP_PLAN_CONFIRMATION = "STOP"');
+    expect(editor).toContain(
+      "Blockchain history and the factory registration remain onchain",
+    );
+    expect(editor).toContain('functionName: "toggleLiveness"');
+    expect(editor).toContain("args: [false]");
+  });
+
+  it("exposes the owner-only liveness toggle through the dashboard ABI", () => {
+    const contract = source("../lib/contract.ts");
+
+    expect(contract).toMatch(
+      /name:\s*['"]toggleLiveness['"][\s\S]*stateMutability:\s*['"]nonpayable['"][\s\S]*type:\s*['"]bool['"]/,
+    );
+  });
+
   it("uses Telegram blue only for Telegram controls and status", () => {
     const css = source("../app/globals.css").toLowerCase();
     const access = css.match(/\.telegram-access\s*\{([^}]*)\}/)?.[1] ?? "";

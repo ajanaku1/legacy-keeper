@@ -23,8 +23,9 @@ export function WalletAccessGate({ restoring }: { restoring: boolean }) {
         <span className="section-label">Private wallet workspace</span>
         <h1 id="access-title">Connect your wallet.</h1>
         <p>
-          Dashboard state, beneficiaries, recovery controls, and activity are
-          only loaded after a wallet connection.
+          Connect to the private workspace for your autonomous continuity agent.
+          Plan state, beneficiaries, recovery controls, and activity are only
+          loaded after wallet authorization.
         </p>
         <WalletEntryButton className="landing-primary" />
         <Link className="access-home" href="/">

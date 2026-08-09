@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { isAddress, zeroAddress, type Address } from "viem";
-import { useSignTypedData } from "wagmi";
+import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { useApplication } from "@/components/shell/ApplicationShell";
 import { TelegramLinkPanel } from "@/components/telegram/TelegramLinkPanel";
 import {
@@ -21,12 +21,14 @@ import type {
   ConfigurationPayload,
   VerifiedConfigurationEvidence,
 } from "@/lib/configuration-route";
+import { legacyKeeperAbi } from "@/lib/contract";
 import { configurationTypedData } from "@/lib/intent-signer";
 import { randomNonce } from "@/lib/plan-client";
 import { shortAddress } from "@/lib/format";
 
 const DAY = 86_400;
 const SEPOLIA = 11_155_111;
+const STOP_PLAN_CONFIRMATION = "STOP";
 type Section = "beneficiaries" | "liveness" | "recovery" | "trackedTokens";
 const SECTIONS: readonly {
   value: Section;
@@ -57,7 +59,10 @@ const SECTIONS: readonly {
 
 type Entry = { address: string; sharePercent: number };
 type SettingsView =
-  { kind: "edit"; section: Section } | { kind: "review" } | null;
+  | { kind: "edit"; section: Section }
+  | { kind: "review" }
+  | { kind: "delete" }
+  | null;
 
 interface SettingsDraft {
   beneficiaries: Entry[];
@@ -77,6 +82,7 @@ export function PlanSettingsEditor() {
   const [view, setView] = useState<SettingsView>(null);
   const [draft, setDraft] = useState(() => draftFrom(app.keeper));
   const [notice, setNotice] = useState<SettingsNotice>();
+  const [disabledNotice, setDisabledNotice] = useState(false);
   const close = useCallback(() => setView(null), []);
   const onVerified = useCallback(
     (section: Section, evidence: VerifiedConfigurationResponse) => {
@@ -100,10 +106,14 @@ export function PlanSettingsEditor() {
           dismiss={() => setNotice(undefined)}
         />
       )}
+      {disabledNotice && (
+        <PlanDisabledNotice dismiss={() => setDisabledNotice(false)} />
+      )}
       <SettingsRegister
         app={app}
         launch={launch}
         review={() => setView({ kind: "review" })}
+        deletePlan={() => setView({ kind: "delete" })}
       />
       {view?.kind === "edit" && (
         <SettingsDialog
@@ -113,6 +123,18 @@ export function PlanSettingsEditor() {
       )}
       {view?.kind === "review" && (
         <PlanReviewDialog app={app} launch={launch} close={close} />
+      )}
+      {view?.kind === "delete" && (
+        <DeletePlanDialog
+          context={{ app, plan }}
+          actions={{
+            close,
+            onDeleted: () => {
+              setDisabledNotice(true);
+              setView(null);
+            },
+          }}
+        />
       )}
     </>
   );
@@ -160,10 +182,12 @@ function SettingsRegister({
   app,
   launch,
   review,
+  deletePlan,
 }: {
   app: Application;
   launch: (section: Section) => void;
   review: () => void;
+  deletePlan: () => void;
 }) {
   return (
     <>
@@ -189,8 +213,225 @@ function SettingsRegister({
       </section>
       <AdvancedSettings review={review} />
       <TelegramLinkPanel />
+      <DeletePlanSection
+        active={app.keeper.livenessActive}
+        deletePlan={deletePlan}
+      />
     </>
   );
+}
+
+function PlanDisabledNotice({ dismiss }: { dismiss: () => void }) {
+  return (
+    <section className="settings-success" role="status" aria-live="polite">
+      <span className="settings-success-mark" aria-hidden="true">
+        ✓
+      </span>
+      <div>
+        <h2>Plan monitoring disabled</h2>
+        <p>The confirmed Sepolia transaction stopped liveness monitoring.</p>
+      </div>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label="Dismiss stop confirmation"
+        onClick={dismiss}
+      >
+        ×
+      </button>
+    </section>
+  );
+}
+
+function DeletePlanSection({
+  active,
+  deletePlan,
+}: {
+  active: boolean;
+  deletePlan: () => void;
+}) {
+  return (
+    <section className="settings-danger-zone" aria-labelledby="delete-title">
+      <div>
+        <span className="section-label">Danger zone</span>
+        <h2 id="delete-title">Stop this plan</h2>
+        <p>
+          Stop liveness monitoring and prevent this plan from becoming eligible
+          for inheritance while disabled.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="danger-button"
+        disabled={!active}
+        onClick={deletePlan}
+      >
+        {active ? "Stop plan" : "Plan disabled"}
+      </button>
+    </section>
+  );
+}
+
+interface DeletePlanContext {
+  app: Application;
+  plan: Address;
+}
+
+interface DeletePlanActions {
+  close: () => void;
+  onDeleted: () => void;
+}
+
+function DeletePlanDialog({
+  context,
+  actions,
+}: {
+  context: DeletePlanContext;
+  actions: DeletePlanActions;
+}) {
+  const dialog = useRef<HTMLDivElement>(null);
+  const [confirmation, setConfirmation] = useState("");
+  const deletion = useDeletePlan(context, actions.onDeleted);
+  const confirmed = confirmation === STOP_PLAN_CONFIRMATION;
+  useSettingsDialog(dialog, actions.close);
+
+  return (
+    <div className="settings-backdrop">
+      <div
+        className="settings-dialog settings-delete-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+        ref={dialog}
+        tabIndex={-1}
+      >
+        <SettingsDialogHeader
+          eyebrow="Danger zone"
+          title="Stop this plan?"
+          close={actions.close}
+        />
+        <DeletePlanConfirmation
+          confirmation={confirmation}
+          setConfirmation={setConfirmation}
+        />
+        <DeletePlanFooter
+          confirmed={confirmed}
+          deletion={deletion}
+          close={actions.close}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DeletePlanConfirmation({
+  confirmation,
+  setConfirmation,
+}: {
+  confirmation: string;
+  setConfirmation: (value: string) => void;
+}) {
+  return (
+    <div className="settings-dialog-body delete-plan-copy">
+      <p>
+        This disables liveness monitoring and prevents inheritance from becoming
+        eligible while the plan is disabled.
+      </p>
+      <p>
+        Blockchain history and the factory registration remain onchain. This
+        action does not erase past transactions.
+      </p>
+      <label className="form-field">
+        <span>
+          Type <strong>{STOP_PLAN_CONFIRMATION}</strong> to confirm
+        </span>
+        <input
+          value={confirmation}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setConfirmation(event.target.value)}
+        />
+      </label>
+    </div>
+  );
+}
+
+type DeletePlanState = ReturnType<typeof useDeletePlan>;
+
+function DeletePlanFooter({
+  confirmed,
+  deletion,
+  close,
+}: {
+  confirmed: boolean;
+  deletion: DeletePlanState;
+  close: () => void;
+}) {
+  return (
+    <footer className="settings-dialog-foot delete-plan-actions">
+      <div className="settings-result" role="status" aria-live="polite">
+        {deletion.message}
+      </div>
+      <div className="confirm-actions">
+        <button type="button" className="secondary" onClick={close}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="danger-button"
+          disabled={!confirmed || deletion.pending}
+          aria-busy={deletion.pending}
+          onClick={deletion.deletePlan}
+        >
+          {deletion.pending ? "Stopping plan…" : "Stop plan"}
+        </button>
+      </div>
+    </footer>
+  );
+}
+
+function useDeletePlan(context: DeletePlanContext, onDeleted: () => void) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const publicClient = usePublicClient({ chainId: SEPOLIA });
+  const { writeContractAsync } = useWriteContract();
+  const wrongNetwork = context.app.chainId !== SEPOLIA;
+
+  async function deletePlan() {
+    if (wrongNetwork) {
+      context.app.switchToSepolia();
+      return;
+    }
+    if (!publicClient) {
+      setError("Sepolia is unavailable. Try again in a moment.");
+      return;
+    }
+    setPending(true);
+    setError("");
+    try {
+      const hash = await writeContractAsync({
+        address: context.plan,
+        abi: legacyKeeperAbi,
+        functionName: "toggleLiveness",
+        args: [false],
+      });
+      await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+      await context.app.keeper.refetch();
+      onDeleted();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Stopping the plan failed.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return {
+    deletePlan,
+    pending,
+    message: wrongNetwork ? "Switch to Sepolia to stop this plan." : error,
+  };
 }
 
 function SettingsRegisterRow({

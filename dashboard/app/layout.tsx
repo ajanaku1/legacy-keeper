@@ -3,6 +3,7 @@ import { Manrope, DM_Mono } from "next/font/google";
 import { headers } from "next/headers";
 import { cookieToInitialState } from "wagmi";
 import { wagmiConfig } from "@/lib/wagmi-config";
+import { PRODUCT_POSITIONING } from "@/lib/product-positioning";
 import { Providers } from "./providers";
 import "./globals.css";
 import "./landing.css";
@@ -22,9 +23,8 @@ const dmMono = DM_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "LegacyKeeper — Continuity Plan",
-  description:
-    "Autonomous onchain inheritance and emergency evacuation, executed through KeeperHub.",
+  title: PRODUCT_POSITIONING.title,
+  description: PRODUCT_POSITIONING.full,
   icons: {
     icon: [
       {

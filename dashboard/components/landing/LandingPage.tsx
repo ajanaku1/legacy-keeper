@@ -10,6 +10,7 @@ import {
   type VaultTiltController,
 } from "@/components/landing/landing-motion";
 import { WalletEntryButton } from "@/components/wallet/WalletEntryButton";
+import { PRODUCT_POSITIONING } from "@/lib/product-positioning";
 
 export function LandingPage() {
   return (
@@ -57,14 +58,10 @@ function LandingHero() {
     <section className="landing-hero">
       <div className="landing-hero-copy">
         <p className="landing-kicker">
-          <span aria-hidden="true" /> KeeperHub-powered continuity
+          <span aria-hidden="true" /> {PRODUCT_POSITIONING.category}
         </p>
-        <h1>Your continuity plan should outlive your attention.</h1>
-        <p className="landing-lede">
-          LegacyKeeper turns inactivity rules, beneficiary intent, and emergency
-          recovery into a wallet-owned plan, then reports verified activity to a
-          private Telegram chat without handing the bot control.
-        </p>
+        <h1>The continuity agent that acts when you cannot.</h1>
+        <p className="landing-lede">{PRODUCT_POSITIONING.full}</p>
         <div className="landing-actions">
           <WalletEntryButton />
           <a className="landing-secondary" href="#architecture">
@@ -179,10 +176,11 @@ function ArchitectureSection() {
     <section className="landing-section architecture-section" id="architecture">
       <div className="landing-section-heading">
         <span className="section-label">Architecture / 01</span>
-        <h2>Automation without surrendering authority.</h2>
+        <h2>Autonomy without surrendering authority.</h2>
         <p>
-          Agents can route execution. They cannot silently rewrite who owns the
-          plan, who receives assets, or when recovery becomes eligible.
+          The agent can monitor, decide, execute, and verify. It cannot silently
+          rewrite who owns the plan, who receives assets, or when recovery
+          becomes eligible.
         </p>
       </div>
       <ol className="architecture-register">
@@ -251,12 +249,13 @@ function ControlSection() {
       </div>
       <div className="landing-section-heading">
         <span className="section-label">Control / 03</span>
-        <h2>Built for the moment you are not there to click.</h2>
+        <h2>An agent built for the moment you are not there to click.</h2>
         <p>
           Check in while active. If your configured timer expires, the plan
           enters a visible grace period before inheritance becomes callable. A
           separate recovery authority can trigger an emergency sweep.
         </p>
+        <p>{PRODUCT_POSITIONING.safety}</p>
         <ul className="control-list">
           <li>
             <span>Heartbeat</span>
@@ -393,7 +392,7 @@ function TelegramGlyph() {
 function LandingCallToAction() {
   return (
     <section className="landing-cta">
-      <span className="section-label">Your wallet. Your plan.</span>
+      <span className="section-label">Your wallet. Your agent. Your rules.</span>
       <h2>Set the rules before they are needed.</h2>
       <WalletEntryButton />
       <p>One plan per wallet · two Telegram links · Sepolia testnet · no custody</p>
@@ -405,7 +404,7 @@ function LandingFooter() {
   return (
     <footer className="landing-footer">
       <span>LegacyKeeper</span>
-      <p>Continuity infrastructure executed through KeeperHub.</p>
+      <p>{PRODUCT_POSITIONING.category}.</p>
       <a href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">
         Sepolia explorer ↗
       </a>

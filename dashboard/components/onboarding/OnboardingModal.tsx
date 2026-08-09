@@ -194,7 +194,7 @@ function WelcomeStep({
     <section className="step-panel">
       <StepIntro
         title="Build one plan for this wallet."
-        body="LegacyKeeper records inactivity rules, beneficiaries, and recovery controls before anything can be signed."
+        body="Your continuity agent records inactivity rules, beneficiaries, and recovery controls before anything can be signed."
       />
       <div className="connection-register">
         <StatusLine label="Owner wallet" ready={connected}>

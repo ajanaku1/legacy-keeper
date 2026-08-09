@@ -87,6 +87,8 @@ export class LegacyKeeperBot {
       case '/help':
         return [
           '*LegacyKeeper*',
+          'Verifiable autonomous continuity agent',
+          'Monitors wallet liveness, coordinates KeeperHub execution, and proves outcomes onchain.',
           '',
           '/status — live liveness and configuration',
           '/checkin — how to reset the timer',

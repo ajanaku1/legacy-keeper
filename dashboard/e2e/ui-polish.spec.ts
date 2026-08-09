@@ -12,7 +12,7 @@ test("landing presents the complete production feature story", async ({ page }) 
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: /continuity plan should outlive/i }),
+    page.getByRole("heading", { name: /continuity agent that acts/i }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: /private alerts/i }),

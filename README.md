@@ -1,10 +1,10 @@
 # LegacyKeeper
 
-**Verifiable onchain continuity for self-custodied wallets.**
+**Verifiable autonomous continuity agent for self-custodied wallets.**
 
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-111827?logo=nextdotjs)](dashboard/package.json)
 [![Solidity 0.8.24](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)](contracts/LegacyKeeper.sol)
-[![Core tests](https://img.shields.io/badge/core_tests-307_passing-16a34a)](#verification)
+[![Core tests](https://img.shields.io/badge/core_tests-320_passing-16a34a)](#verification)
 [![Sepolia](https://img.shields.io/badge/network-Sepolia-627eea?logo=ethereum)](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -12,8 +12,14 @@
   <img src="dashboard/public/legacykeeper-mark.svg" alt="LegacyKeeper shield mark" width="112" />
 </p>
 
-LegacyKeeper lets a wallet owner define, maintain, and recover an inheritance
-plan through signed KeeperHub workflows with independent Sepolia verification.
+LegacyKeeper is a verifiable autonomous continuity agent. It monitors wallet
+liveness, coordinates sponsored execution through KeeperHub, and proves every
+outcome onchain.
+
+The owner defines the policy. LegacyKeeper observes, decides, acts, and verifies
+within those signed constraints. Safety-critical decisions are deterministic by
+design: no model can rewrite beneficiaries, bypass recovery authority, or move
+assets outside the contract rules.
 
 ## Live Demo
 
@@ -36,11 +42,11 @@ The dashboard capture uses a seeded test-only Sepolia wallet.
 
 ## What Is LegacyKeeper?
 
-LegacyKeeper gives each owner wallet one continuity plan. The owner defines
-beneficiaries, timing, recovery authority, and optional tracked tokens, then
-signs an exact EIP-712 intent for KeeperHub to relay. The app reports success
-only after the KeeperHub result, transaction receipt, expected event, factory
-mapping, and resulting contract state agree.
+LegacyKeeper is a verifiable autonomous continuity agent that gives each owner
+wallet one continuity plan. It monitors liveness and evaluates owner-defined
+conditions. It coordinates sponsored execution through KeeperHub. It reports
+success only after the execution result, transaction receipt, expected event,
+factory mapping, and resulting contract state agree.
 
 ## Features
 
@@ -92,7 +98,7 @@ exercise the same plan contract predicates. The current registry is
 owner or recovery wallet
         │ signs exact EIP-712 intent
         ▼
-LegacyKeeper server ── resolves factory ownership and validates action
+LegacyKeeper agent ── observes state, evaluates policy, validates action
         │
         ▼
 KeeperHub wallet-scoped workflow ── relays contract write on Sepolia
@@ -338,7 +344,7 @@ npm --prefix dashboard run test:e2e -- e2e/ui-polish.spec.ts
 ```
 
 The current verified local baseline passes 53 contract tests, 78
-KeeperHub-agent tests, 176 dashboard tests, and the optimized Next.js build.
+KeeperHub-agent tests, 189 dashboard tests, and the optimized Next.js build.
 `./verify.sh` is the public repository gate; live-chain claims are checked
 separately against Sepolia.
 

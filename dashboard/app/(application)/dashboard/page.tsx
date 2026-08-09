@@ -6,6 +6,7 @@ import { HeartbeatPanel } from '@/components/HeartbeatPanel';
 import { PlanNotice } from '@/components/application/PlanNotice';
 import { useApplication } from '@/components/shell/ApplicationShell';
 import { formatCountdown, shortAddress } from '@/lib/format';
+import { PRODUCT_POSITIONING } from '@/lib/product-positioning';
 
 export default function DashboardPage() {
   const app = useApplication();
@@ -15,9 +16,9 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Wallet plan register"
+        eyebrow={PRODUCT_POSITIONING.category}
         title={resolved ? 'Your continuity plan' : 'Nothing is armed yet.'}
-        description="One wallet, one plan, with every KeeperHub action retained as evidence."
+        description="Monitors wallet liveness, coordinates KeeperHub execution, and retains every verified outcome as evidence."
         status={
           <span className={`status-chip ${resolved ? 'verified' : ''}`}>
             {resolved ? '● Plan loaded' : '○ Draft'}

@@ -1,7 +1,7 @@
 {
   "name": "legacy-keeper",
   "version": "0.1.0",
-  "description": "Onchain security & inheritance agent powered by KeeperHub — autonomous emergency evacuation and inheritance execution",
+  "description": "LegacyKeeper is a verifiable autonomous continuity agent that monitors wallet liveness, coordinates sponsored execution through KeeperHub, and proves every outcome onchain.",
   "private": true,
   "scripts": {
     "test": "hardhat test",
