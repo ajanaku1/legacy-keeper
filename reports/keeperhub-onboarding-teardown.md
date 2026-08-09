@@ -159,8 +159,8 @@ default. That wording made support, selection, and proof look like one thing.
 They are three different claims.
 
 LegacyKeeper therefore says private routing was **requested**, never that it was
-used. The upstream documentation contribution accompanying this report corrects
-the capability wording and records those evidence boundaries.
+used. Upstream [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983)
+corrects the capability wording and records those evidence boundaries.
 
 **Onboarding lesson:** a security feature needs separate fields for
 availability, request, fallback, and observed result.
@@ -242,6 +242,7 @@ owner, token, or spender it needed checked.
 |---|---|
 | Natural MCP argument mismatch | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) and merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848) |
 | Cached-failure retry failure | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), open [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) |
+| Private-routing evidence boundary | [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983) |
 | Recovered autonomous inheritance | [Sepolia transaction `0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) |
 | Sponsored transaction | [Sepolia transaction `0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598) |
 | Workflow and platform coverage | [KeeperHub coverage matrix](keeperhub-coverage.md) |
