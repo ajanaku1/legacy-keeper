@@ -433,6 +433,7 @@ reports/                   historical live evidence, limitations, and threat mod
 ## Further documentation
 
 - [Clean-clone and production tutorial](starter/docs/tutorial.md)
+- [KeeperHub onboarding teardown: first tool call to verified transaction](reports/keeperhub-onboarding-teardown.md)
 - [Threat model](reports/threat-model.md)
 - [KeeperHub platform coverage](reports/keeperhub-coverage.md)
 - [KeeperHub friction reports](reports/friction-log.md)
