@@ -36,6 +36,7 @@ This is the shortest path through the working product and its evidence:
 | 2. Configure | Increase only the grace period from seven to eight days; the enabled Configuration workflow relays the owner-scoped signature | KeeperHub execution `1bce3s44ha57dy1zg7t7z` produced [`ConfigUpdated` transaction `0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) and the plan now reads `691200` seconds |
 | 3. Check in | Sign a heartbeat; the enabled Heartbeat Relay workflow submits it without owner-paid gas | Sponsored [`HeartbeatRecorded` transaction `0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) advanced that same plan |
 | 4. Verify | Open Activity and follow the retained transaction proof | LegacyKeeper reports success only when the KeeperHub execution, successful receipt, expected event, current factory mapping, and resulting plan state agree; the complete [configuration evidence](reports/current-factory-configuration-evidence.json) is retained in-repo |
+| 5. Inherit | Let the signed timeout and grace period expire; the five-minute monitor finds the plan and requests sponsored execution | KeeperHub execution `7c56umll4150i6jd7jqtk` produced the current-plan [`InheritanceExecuted` transaction `0x1284eeb4`](https://sepolia.etherscan.io/tx/0x1284eeb4deba522d2717e6056921fe31261632c226ab992a81d77922321a3ca9) |
 
 The deterministic agent is the safety feature: it observes liveness, evaluates
 the owner-signed policy, selects only an allowed action, routes it through
@@ -47,6 +48,7 @@ KeeperHub, and rejects incomplete or contradictory proof.
 |---|---|---|
 | Wallet-scoped writes | **Four enabled workflows** | Plan creation, configuration, heartbeat, and evacuation are reproducible from [`wallet-scoped-definitions.ts`](workflows/wallet-scoped-definitions.ts) and their [stored exports](workflows/exported/) |
 | Outcome verification | **Fail-closed** | No success without execution ID, transaction hash, successful receipt, expected event, registry match, and resulting state |
+| Liveness monitor | **Five-minute scan** | The authenticated scheduler scans factory `PlanCreated` events, rechecks `planOf(owner)`, submits only eligible plans, and isolates per-plan failures |
 | x402 allowance check | **Settled and consumed** | The address-bound OneSource result returned after a $0.003 USDC payment on Base: [`0x03376097`](https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5) |
 | MPP | **Not demonstrated** | The advertised route required an unfunded Tempo account; no funding was authorized |
 | Private routing | **Not proven** | No request parameter or returned route evidence was available, so LegacyKeeper does not claim it was used |
@@ -110,6 +112,11 @@ factory mapping, and resulting contract state agree.
   once eligible. After execution, the UI closes check-ins and presents the
   verified outcome. Emergency evacuation requires the separately registered
   recovery wallet.
+- **Autonomous inheritance monitor.** A five-minute GitHub Actions schedule
+  calls an authenticated Vercel Function. It discovers every factory plan,
+  checks eligibility onchain, deduplicates concurrent runs, and verifies the
+  receipt, `InheritanceExecuted` event, and resulting state before recording
+  success.
 - **Wallet-scoped evidence.** Activity is durable in PostgreSQL, filtered to the
   connected owner in the product UI, and displayed five records per page
   without erasing failed attempts that later recover.
@@ -131,6 +138,7 @@ These are real transactions, not illustrative hashes.
 |---|---|---|
 | Current-factory signed configuration | [`0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) | KeeperHub execution `1bce3s44ha57dy1zg7t7z` updated only the grace period; receipt, event, nonce, registry, owner, and post-state agree |
 | Wallet-scoped sponsored check-in | [`0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) | Dashboard → KeeperHub → `HeartbeatRecorded`, retained for the owner |
+| Current-factory inheritance | [`0x1284eeb4`](https://sepolia.etherscan.io/tx/0x1284eeb4deba522d2717e6056921fe31261632c226ab992a81d77922321a3ca9) | The elapsed current plan was sponsored by KeeperHub and emitted `InheritanceExecuted`; post-state reads `inheritanceExecuted = true` |
 | Inheritance recovered after failures | [`0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) | A later success does not erase the failed route before it |
 | Exact 60/40 inheritance | [`0x6efe67a5`](https://sepolia.etherscan.io/tx/0x6efe67a56e725408785e048eb3a7f1a2598ac70e4cdbbdbdc9cd554cd7d12308) | 0.006 and 0.004 ETH delivered |
 | Recovery-key evacuation | [`0x9fe43045`](https://sepolia.etherscan.io/tx/0x9fe43045a93566b7b35f94ab5efc0a9ac39e459f024d12d69e0e2f257bba6ffd) | Recovery key authorized the sweep; owner key was not used |
@@ -161,6 +169,8 @@ receipt + expected event + registry + resulting state
 KeeperHub is load-bearing for product writes, but its acceptance response is
 not trusted as completion. API keys remain server-only. The app fails closed if
 the execution ID, transaction hash, receipt, event, or state proof is missing.
+The scheduler uses a stable plan-and-heartbeat idempotency key, so overlapping
+runs cannot create distinct submissions for the same inheritance window.
 
 ### Asset custody
 
@@ -206,6 +216,7 @@ requests or a private, signed wallet-session cookie.
 | `POST` | `/api/configuration` | Verify and relay a signed policy update |
 | `POST` | `/api/heartbeat` | Verify and relay the owner's daily check-in |
 | `POST` | `/api/evacuation` | Verify and relay recovery-key evacuation |
+| `GET` | `/api/monitor/inheritance` | Authenticated scan and verified execution of eligible factory plans |
 | `POST` | `/api/integrations/keeperhub/events` | Accept authenticated, verified KeeperHub events |
 | `GET`, `POST` | `/api/telegram/link-sessions` | Create or inspect a private Telegram link session |
 | `GET`, `POST`, `PUT` | `/api/telegram/links` | Restore, create, or authenticate a wallet link |
@@ -332,7 +343,7 @@ The full commented template is [.env.example](.env.example).
 | Group | Variables |
 |---|---|
 | KeeperHub | `KEEPERHUB_API_KEY`, `KEEPERHUB_WEBHOOK_API_KEY`, four workflow IDs |
-| Chain | `SEPOLIA_RPC_URL`, `NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS` |
+| Chain | `SEPOLIA_RPC_URL`, `NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS`, `LEGACY_KEEPER_FACTORY_DEPLOYMENT_BLOCK` |
 | Deployment | `DEPLOYER_PRIVATE_KEY`, optional `ETHERSCAN_API_KEY` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ACTION_SECRET`, `TELEGRAM_SESSION_SECRET` |
 | Persistence | `DATABASE_URL` |
@@ -373,6 +384,16 @@ Configure the production environment variables, then deploy from `dashboard/`
 or with the repository's existing Vercel project link. The live deployment is
 `https://legacy-keeper-seven.vercel.app`.
 
+The current Vercel team is on Hobby, whose Cron Jobs run at most daily. The
+five-minute scheduler therefore lives in
+`.github/workflows/inheritance-monitor.yml` and calls the Node.js route on
+Vercel. Each invocation uses a short-lived GitHub OIDC token; the route verifies
+GitHub's signature and locks issuer, audience, repository, workflow, event, and
+branch claims, so there is no shared cron secret to provision. Scheduled Actions
+are best-effort and, on a public repository, GitHub disables them after 60 days
+without repository activity; the workflow can be re-enabled from Actions or
+with `gh workflow enable`.
+
 ## Verification
 
 ```bash
@@ -391,8 +412,8 @@ The Phase 7 browser gate is:
 npm --prefix dashboard run test:e2e -- e2e/ui-polish.spec.ts
 ```
 
-The current verified local baseline passes 53 contract tests, 80
-KeeperHub-agent tests, 194 dashboard tests, 14 browser tests, and the optimized
+The current verified local baseline passes 53 contract tests, 81
+KeeperHub-agent tests, 221 dashboard tests, 14 browser tests, and the optimized
 Next.js build.
 `./verify.sh` is the public repository gate; live-chain claims are checked
 separately against Sepolia.

@@ -53,7 +53,7 @@ export function useKeeper(planAddress?: Address): KeeperState {
       { ...contract, functionName: "getTrackedTokens" },
       { ...contract, functionName: "inheritanceTimestamp" },
     ],
-    query: { enabled: Boolean(planAddress) },
+    query: { enabled: Boolean(planAddress), refetchInterval: 15_000 },
   });
 
   const read = <T>(i: number): T | undefined =>

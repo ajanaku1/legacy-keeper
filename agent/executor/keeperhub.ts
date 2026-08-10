@@ -84,6 +84,53 @@ interface Settlement {
 type JsonObject = Record<string, unknown>;
 type RouteDecision = ReturnType<typeof chooseRoute>;
 
+const DIRECT_CALL_ABI: Record<string, string> = {
+  executeInheritance: JSON.stringify([
+    {
+      name: 'executeInheritance',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [],
+      outputs: [],
+    },
+  ]),
+  executeInheritanceERC20: JSON.stringify([
+    {
+      name: 'executeInheritanceERC20',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [{ name: 'token', type: 'address' }],
+      outputs: [],
+    },
+  ]),
+  evacuate: JSON.stringify([
+    {
+      name: 'evacuate',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+        { name: 'signature', type: 'bytes' },
+      ],
+      outputs: [],
+    },
+  ]),
+  heartbeatBySig: JSON.stringify([
+    {
+      name: 'heartbeatBySig',
+      type: 'function',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+        { name: 'signature', type: 'bytes' },
+      ],
+      outputs: [],
+    },
+  ]),
+};
+
 interface AttemptResult {
   record: AuditEntry;
   executionId?: string;
@@ -293,6 +340,8 @@ export class KeeperHubExecutor {
       idempotency_key: `${executionKey}-a${idempotencyAttempt}`,
       ...routeDecision.payload,
     };
+    const abi = DIRECT_CALL_ABI[functionName];
+    if (abi) payload.abi = abi;
     if (options.gasLimitMultiplier !== undefined && attempt === 1) {
       payload.gas_limit_multiplier = String(options.gasLimitMultiplier);
     }

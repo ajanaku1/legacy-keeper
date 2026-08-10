@@ -156,7 +156,7 @@ function SidebarFooter({
   return (
     <div className="sidebar-foot">
       <p>
-        <span aria-hidden="true">●</span> KeeperHub online
+        <span aria-hidden="true">●</span> KeeperHub configured
       </p>
       <button
         className="collapse-button"

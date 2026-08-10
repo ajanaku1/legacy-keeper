@@ -1,0 +1,30 @@
+name: Inheritance monitor
+
+on:
+  schedule:
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: inheritance-monitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Scan and execute eligible plans
+        run: |
+          OIDC_RESPONSE=$(curl --fail-with-body --show-error --silent \
+            --header "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=legacy-keeper-inheritance-monitor")
+          OIDC_TOKEN=$(printf '%s' "$OIDC_RESPONSE" | jq --exit-status --raw-output '.value')
+          curl --fail-with-body --show-error --silent \
+            --retry 2 --retry-all-errors \
+            --header "Authorization: Bearer $OIDC_TOKEN" \
+            https://legacy-keeper-seven.vercel.app/api/monitor/inheritance

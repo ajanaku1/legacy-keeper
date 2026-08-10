@@ -351,6 +351,24 @@ describe('Executor integrity — acceptance is not success', () => {
     });
   });
 
+  it('supplies an ABI when executing factory-created plan contracts', async () => {
+    fake = await startFakeKeeperHub();
+    const mcp = client(fake.url);
+    await mcp.connect();
+    const executor = executorWithVerifier(mcp, new AuditLedger(ledgerPath()), verified);
+
+    const result = await executor.executeInheritance(
+      { type: 'scheduled', source: 'integrity-test' },
+      { maxAttempts: 1 }
+    );
+
+    expect(result.success).toBe(true);
+    const submitted = fake.calls.find((call) => call.name === 'execute_contract_call');
+    expect(submitted?.args.abi).toBe(
+      '[{"name":"executeInheritance","type":"function","stateMutability":"nonpayable","inputs":[],"outputs":[]}]'
+    );
+  });
+
   it('does not claim a private route when no private route parameter is transmitted', async () => {
     fake = await startFakeKeeperHub({
       executionStatus: {
