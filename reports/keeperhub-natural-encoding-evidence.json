@@ -1,0 +1,50 @@
+{
+  "evidenceVersion": 1,
+  "checkedAt": "2026-08-11T10:48:15.112Z",
+  "endpoint": "https://app.keeperhub.com/mcp",
+  "server": {
+    "name": "keeperhub",
+    "version": "1.2.0"
+  },
+  "upstream": {
+    "issue": "https://github.com/KeeperHub/keeperhub/issues/1841",
+    "pullRequest": "https://github.com/KeeperHub/keeperhub/pull/1848",
+    "fixCommit": "97be79e6ff10e504c5387909244ba4a3467ad536"
+  },
+  "mutationSafety": "The deliberately invalid contract address forces failure before simulation or broadcast.",
+  "requestEncoding": {
+    "chain_id": {
+      "type": "number",
+      "value": 11155111
+    },
+    "function_args": {
+      "type": "array",
+      "value": []
+    },
+    "gas_limit_multiplier": {
+      "type": "number",
+      "value": 1.2
+    }
+  },
+  "schemaProperties": {
+    "chain_id": {
+      "description": "Chain ID (e.g., '1' for Ethereum)",
+      "type": "string"
+    },
+    "function_args": {
+      "description": "JSON array of function arguments (e.g., '[\"0x...\", \"1000\"]')",
+      "type": "string"
+    },
+    "gas_limit_multiplier": {
+      "description": "Gas limit multiplier (e.g., '1.5' for 50% buffer)",
+      "type": "string"
+    }
+  },
+  "toolDescription": "Call a smart contract function. For view/pure functions, returns the result directly. For state-changing functions, submits a transaction and returns the execution ID. Requires a wallet integration for write calls. Full example: {\"contract_address\": \"0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238\", \"chain_id\": \"11155111\", \"function_name\": \"transfer\", \"function_args\": \"[\\\"0xRecipient...\\\", \\\"1000\\\"]\"} - note that function_args is a JSON array encoded as a string.",
+  "observedError": "tool execute_contract_call failed: API call failed: 400 Bad Request - {\"error\":\"ABI is required. Could not auto-fetch ABI: Unable to fetch ABI for intentionally-invalid-address on chain 11155111. Contract may not be verified.\",\"field\":\"abi\"}",
+  "result": {
+    "passed": true,
+    "downstreamFailureObserved": true,
+    "rejectedFields": []
+  }
+}

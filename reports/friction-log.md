@@ -9,7 +9,7 @@ the sponsor-integration evidence behind those reports.
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
 | [07](#07) | A reused `idempotency_key` silently replays a cached failure, making agent recovery impossible | **Critical** | Confirmed live |
-| [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises | **High** | Confirmed |
+| [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises | **High** | Fixed upstream; live retest passed |
 | [06](#06) | `status: "completed"` means settled, not successful | **High** | Confirmed, cost us a real bug |
 | [09](#09) | Private routing is advertised but has no API surface and no observability | **High** | Confirmed |
 | [02](#02) | The workflow schema exists but is undiscoverable from the docs | Medium | Corrected |
@@ -133,13 +133,40 @@ Adjacent to upstream [#1784](https://github.com/KeeperHub/keeperhub/issues/1784)
 <a id="03"></a>
 ## 03 · `execute_contract_call` types disagree with the schema it advertises
 
-**Status:** confirmed, reproducible.
+**Status:** FIXED UPSTREAM; LIVE RETEST PASSED on 2026-08-11.
 
 **Filed upstream:** [KeeperHub/keeperhub#1841](https://github.com/KeeperHub/keeperhub/issues/1841)
 
+**Upstream result:** merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848),
+including commit [`97be79e`](https://github.com/keeperguard-labs/keeperhub/commit/97be79e6ff10e504c5387909244ba4a3467ad536).
+
+**Hosted retest:** [sanitized KeeperHub v1.2.0 evidence](keeperhub-natural-encoding-evidence.json).
+The mutation-safe probe sent all three natural values together:
+
+```json
+{
+  "chain_id": 11155111,
+  "function_args": [],
+  "gas_limit_multiplier": 1.2
+}
+```
+
+It paired them with an intentionally invalid contract address, making
+simulation or broadcast impossible. The hosted MCP accepted all three values
+and advanced to ABI lookup, where it failed with `ABI is required` for that
+address. There were no `expected string`, `received number`, or `received
+array` errors. This confirms the coercion fix is deployed, not merely merged.
+
+The current `tools/list` schema retains the legacy string representation for
+generated clients, while the runtime accepts natural numbers and arrays. The
+tool description now includes a full working string-form example and explicitly
+notes that `function_args` is a JSON array encoded as a string.
+
+### Original behavior when filed
+
 `tools/list` advertises `execute_contract_call` with properties
 `chain_id` and `function_args`. The natural encoding, a numeric chain id and
-a real JSON array of arguments, is rejected:
+a real JSON array of arguments, was rejected:
 
 ```
 MCP error -32602: Input validation error:
@@ -147,8 +174,8 @@ MCP error -32602: Input validation error:
   function_args: expected string, received array
 ```
 
-`gas_limit_multiplier` is affected too. Every scalar on this tool must be a **string**, and `function_args` must be a JSON array *encoded as
-a string*:
+`gas_limit_multiplier` was affected too. Every scalar had to be a **string**,
+and `function_args` had to be a JSON array *encoded as a string*:
 
 ```jsonc
 // rejected
@@ -157,16 +184,16 @@ a string*:
 { "chain_id": "11155111", "function_args": "[]" }
 ```
 
-Nothing in the tool description signals this, and `chain_id` as a string is
+Nothing in the original tool description signaled this, and `chain_id` as a string is
 counter-intuitive enough that a builder will try the number first every time.
-An agent generating calls from the schema alone produces invalid requests.
+An agent generating calls from the schema alone produced invalid requests.
 
 **Impact:** this is the first call anyone makes after the handshake, so it sits
 directly on the critical path from signup to first transaction.
 
-**Suggested fix:** either accept both encodings, or make the schema types
-explicit (`"type": "string"` with a `"pattern"`/example on each). A one-line
-example in the tool description would remove the guesswork entirely.
+**Resolution:** KeeperHub implemented both practical remedies: natural inputs
+are coerced safely at runtime, and the description now documents the legacy
+string encoding with a complete example.
 
 ---
 

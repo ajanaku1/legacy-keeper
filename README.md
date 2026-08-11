@@ -21,7 +21,7 @@ assets outside the contract rules.
 
 ## Live Demo
 
-[Open LegacyKeeper](https://legacy-keeper-seven.vercel.app) or
+[Open LegacyKeeper](https://try-lk.vercel.app) or
 [inspect the deployed factory](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576).
 
 The live release uses Sepolia. Do not connect a wallet that holds mainnet funds.
@@ -303,7 +303,7 @@ beneficiaries.
 
 ## Testing the App
 
-1. Open the [production app](https://legacy-keeper-seven.vercel.app).
+1. Open the [production app](https://try-lk.vercel.app).
 2. Connect a browser wallet and switch it to Sepolia when prompted.
 3. Fund the owner and recovery wallets with test-only Sepolia ETH.
 4. Complete onboarding, review the exact plan, and sign its creation intent.
@@ -391,7 +391,7 @@ Use independent high-entropy values for `TELEGRAM_ACTION_SECRET` and
 
 Configure the production environment variables, then deploy from `dashboard/`
 or with the repository's existing Vercel project link. The live deployment is
-`https://legacy-keeper-seven.vercel.app`.
+`https://try-lk.vercel.app`.
 
 The Next.js config is wrapped with `withWorkflow()`, so deployment registers the
 internal Workflow flow, step, and hook endpoints. Plan creation starts the
@@ -469,6 +469,7 @@ reports/                   historical live evidence, limitations, and threat mod
 - [Threat model](reports/threat-model.md)
 - [KeeperHub platform coverage](reports/keeperhub-coverage.md)
 - [KeeperHub friction reports](reports/friction-log.md)
+- [KeeperHub #1841 hosted natural-encoding retest](reports/keeperhub-natural-encoding-evidence.json)
 
 ## License
 

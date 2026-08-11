@@ -21,7 +21,7 @@ The investigation produced two upstream issues and influenced two merged fixes:
 
 | Field finding | Upstream result | Builder impact |
 |---|---|---|
-| Natural JSON values were rejected by `execute_contract_call` | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) led to merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848) | Numeric chain IDs, arrays, and numeric gas values are now accepted by the MCP execute tools |
+| Natural JSON values were rejected by `execute_contract_call` | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) led to merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848); the [hosted v1.2.0 retest passed](keeperhub-natural-encoding-evidence.json) | Numeric chain IDs, arrays, and numeric gas values are now accepted by the MCP execute tools |
 | A reused idempotency key silently replayed a cached revert | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840) informed merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884) | Replayed responses now carry `idempotentReplay: true` instead of looking like fresh executions |
 | Retry disposition remained ambiguous after a timeout | Open [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) builds on the same failure analysis | The proposed response tells an agent when the same key must be reused |
 
@@ -56,6 +56,13 @@ strings. `function_args` also had to be a JSON array encoded inside a string.
 This produced three separate schema failures on the critical path to the first
 transaction. The merged fix now accepts the natural encoding and retains the
 legacy string form.
+
+A mutation-safe retest against the hosted MCP on 2026-08-11 sent all three
+natural values together with an intentionally invalid contract address. The
+request advanced to ABI lookup without any type-validation error, confirming
+the fix is deployed. The complete sanitized request types, schema snapshot,
+tool description, server version, and downstream failure are preserved in
+[`keeperhub-natural-encoding-evidence.json`](keeperhub-natural-encoding-evidence.json).
 
 **Onboarding lesson:** examples help people, but machine-readable schemas must
 also describe values an agent can send successfully.
@@ -240,7 +247,7 @@ owner, token, or spender it needed checked.
 
 | Claim | Evidence |
 |---|---|
-| Natural MCP argument mismatch | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) and merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848) |
+| Natural MCP argument mismatch | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841), merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848), and [passing hosted MCP retest](keeperhub-natural-encoding-evidence.json) |
 | Cached-failure retry failure | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), open [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) |
 | Private-routing evidence boundary | [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983) |
 | Recovered autonomous inheritance | [Sepolia transaction `0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) |

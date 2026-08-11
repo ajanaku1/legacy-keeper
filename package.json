@@ -15,6 +15,7 @@
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
     "agent": "tsx agent/run.ts",
     "agent:bot": "tsx agent/run.ts --with-bot",
+    "evidence:keeperhub-1841": "tsx scripts/workflows/retest-execute-natural-encoding.ts --write",
     "workflows:deploy": "tsx scripts/workflows/deploy.ts"
   },
   "dependencies": {
