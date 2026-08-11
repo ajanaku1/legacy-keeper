@@ -27,8 +27,6 @@ jobs:
           MONITOR_URL=https://legacy-keeper-seven.vercel.app/api/monitor/inheritance
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
             MONITOR_URL="$MONITOR_URL?authOnly=1"
-            printf '%s' "$OIDC_TOKEN" | jq --raw-input \
-              'split(".")[1] | @base64d | fromjson | {repository, ref, event_name, sub, workflow_ref, aud, iss}'
           fi
           curl --fail-with-body --show-error --silent \
             --retry 2 --retry-all-errors \
