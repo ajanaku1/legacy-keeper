@@ -20,6 +20,7 @@ export interface TrackedAssetState {
   planBalance: bigint;
   assets: TrackedAssetBalance[];
   loading: boolean;
+  refetch: () => Promise<void>;
 }
 
 export function useTrackedAssets(
@@ -34,11 +35,14 @@ export function useTrackedAssets(
   );
   const native = useBalance({
     address: plan,
-    query: { enabled: Boolean(plan) },
+    query: { enabled: Boolean(plan), refetchInterval: 15_000 },
   });
   const tokenReads = useReadContracts({
     contracts,
-    query: { enabled: enabled && trackedTokens.length > 0 },
+    query: {
+      enabled: enabled && trackedTokens.length > 0,
+      refetchInterval: 15_000,
+    },
   });
 
   return {
@@ -47,6 +51,9 @@ export function useTrackedAssets(
       assetFromReads(token as Address, index, tokenReads.data),
     ),
     loading: native.isLoading || tokenReads.isLoading,
+    refetch: async () => {
+      await Promise.all([native.refetch(), tokenReads.refetch()]);
+    },
   };
 }
 

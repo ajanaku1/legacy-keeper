@@ -5,8 +5,6 @@ const MONITOR_AUDIENCE = "legacy-keeper-inheritance-monitor";
 const EXPECTED_CLAIMS = {
   repository: "ajanaku1/legacy-keeper",
   ref: "refs/heads/main",
-  event_name: "schedule",
-  sub: "repo:ajanaku1/legacy-keeper:ref:refs/heads/main",
   workflow_ref:
     "ajanaku1/legacy-keeper/.github/workflows/inheritance-monitor.yml@refs/heads/main",
 } as const;
@@ -24,12 +22,24 @@ export async function authorizeInheritanceMonitor(
   if (!token) return false;
   try {
     const claims = await verifyToken(token);
-    return Object.entries(EXPECTED_CLAIMS).every(
-      ([name, expected]) => claims[name] === expected,
-    );
+    return expectedWorkflowClaims(claims);
   } catch {
     return false;
   }
+}
+
+function expectedWorkflowClaims(claims: JWTPayload): boolean {
+  const repository = String(claims.repository ?? "").toLowerCase();
+  const workflow = String(claims.workflow_ref ?? "").toLowerCase();
+  const subject = String(claims.sub ?? "").toLowerCase();
+  const event = String(claims.event_name ?? "");
+  return (
+    repository === EXPECTED_CLAIMS.repository &&
+    claims.ref === EXPECTED_CLAIMS.ref &&
+    workflow === EXPECTED_CLAIMS.workflow_ref &&
+    subject.startsWith(`repo:${EXPECTED_CLAIMS.repository}:`) &&
+    ["schedule", "workflow_dispatch"].includes(event)
+  );
 }
 
 async function verifyGitHubToken(token: string): Promise<JWTPayload> {

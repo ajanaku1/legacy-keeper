@@ -53,6 +53,18 @@ describe("dashboard information hierarchy", () => {
     expect(navigation).not.toContain("/assets");
   });
 
+  it("lets the owner sign a bounded token allowance for the plan", () => {
+    const assets = readFileSync(
+      new URL("../components/TrackedAssets.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(assets).toContain("Approve current balance");
+    expect(assets).toContain('functionName: "approve"');
+    expect(assets).toContain("args: [plan, asset.ownerBalance]");
+    expect(assets).not.toContain("maxUint256");
+  });
+
   it("replaces check-in controls with a clear inheritance outcome", () => {
     const page = readFileSync(
       new URL("../app/(application)/dashboard/page.tsx", import.meta.url),
@@ -68,6 +80,8 @@ describe("dashboard information hierarchy", () => {
     expect(outcome).toContain("Token distributions");
     expect(outcome).toContain('href="/activity"');
     expect(page).toContain("recoveryEligibility(keeper, resolved)");
-    expect(page).toContain("if (keeper.inheritanceExecuted) return 'Executed'");
+    expect(page).toMatch(
+      /if \(keeper\.inheritanceExecuted\) return ["']Executed["']/,
+    );
   });
 });

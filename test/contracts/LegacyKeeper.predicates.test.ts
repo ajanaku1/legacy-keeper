@@ -150,6 +150,19 @@ describe("LegacyKeeper — Goal.md predicates", () => {
 
   // ────────────────────────────────────────────────────────────
   describe("Liveness resets the clock", () => {
+    it("uses the configured heartbeat interval for sub-day plans", async () => {
+      const { keeper } = await setup();
+      await keeper.setLivenessConfig(300, 900, 300);
+      const configuredAt = (await keeper.liveness()).lastHeartbeat;
+
+      await time.setNextBlockTimestamp(Number(configuredAt) + 299);
+      await expect(keeper.heartbeat()).to.be.revertedWith(
+        "LK: heartbeat cooldown",
+      );
+      await time.setNextBlockTimestamp(Number(configuredAt) + 300);
+      await expect(keeper.heartbeat()).to.emit(keeper, "HeartbeatRecorded");
+    });
+
     it("allows at most one heartbeat during a rolling 24-hour window", async () => {
       const { keeper } = await setup();
 

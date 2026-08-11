@@ -8,6 +8,7 @@ import {
   type HeartbeatRequest,
 } from "../lib/heartbeat-route";
 import { prepareHeartbeatMessage } from "../lib/heartbeat-client";
+import { formatCountdown } from "../lib/format";
 import {
   parseKeeperHubExecution,
   parseWebhookExecutionId,
@@ -39,6 +40,7 @@ function dependencies(
     readRegisteredPlan: vi.fn().mockResolvedValue(PLAN),
     readOwner: vi.fn().mockResolvedValue(OWNER),
     readLastHeartbeat: vi.fn().mockResolvedValue(100n),
+    readHeartbeatInterval: vi.fn().mockResolvedValue(1n),
     recoverSigner: vi.fn().mockResolvedValue(OWNER),
     nextIdempotencyKey: vi.fn().mockReturnValue("heartbeat-attempt-1"),
     submitToKeeperHub: vi.fn().mockResolvedValue({ executionId: "kh_123" }),
@@ -68,6 +70,7 @@ describe("wallet-scoped heartbeat route boundary", () => {
       livenessActive: true,
       inheritanceExecuted: false,
       evacuationExecuted: false,
+      graceElapsed: false,
     };
 
     expect(
@@ -85,6 +88,9 @@ describe("wallet-scoped heartbeat route boundary", () => {
     expect(
       checkInAvailability({ ...ready, inheritanceExecuted: true }, false).code,
     ).toBe("PLAN_SETTLED");
+    expect(
+      checkInAvailability({ ...ready, graceElapsed: true }, false).code,
+    ).toBe("RECOVERY_ELIGIBLE");
     expect(checkInAvailability(ready, true).code).toBe("BUSY");
     expect(checkInAvailability(ready, false)).toEqual({
       code: "READY",
@@ -92,7 +98,7 @@ describe("wallet-scoped heartbeat route boundary", () => {
     });
   });
 
-  it("permits at most one check-in during a rolling 24-hour window", () => {
+  it("uses the plan heartbeat interval for client check-in availability", () => {
     const lastHeartbeat = 10_000;
     const ready = {
       connected: true,
@@ -103,16 +109,25 @@ describe("wallet-scoped heartbeat route boundary", () => {
       livenessActive: true,
       inheritanceExecuted: false,
       evacuationExecuted: false,
+      graceElapsed: false,
       lastHeartbeat,
+      heartbeatInterval: 60,
     };
 
-    expect(
-      checkInAvailability(ready, false, lastHeartbeat + 86_399),
-    ).toMatchObject({ code: "COOLDOWN" });
-    expect(checkInAvailability(ready, false, lastHeartbeat + 86_400)).toEqual({
+    expect(checkInAvailability(ready, false, lastHeartbeat + 59)).toEqual({
+      code: "COOLDOWN",
+      reason: "Next check-in available in 1s.",
+    });
+    expect(checkInAvailability(ready, false, lastHeartbeat + 60)).toEqual({
       code: "READY",
       reason: "",
     });
+  });
+
+  it("labels countdown units and includes seconds for short plans", () => {
+    expect(formatCountdown(12)).toBe("12s");
+    expect(formatCountdown(12 * 60 + 5)).toBe("12m 05s");
+    expect(formatCountdown(23 * 3_600 + 57 * 60)).toBe("23h 57m");
   });
 
   it("keeps wallet, plan, and disabled remedies in the client request", () => {
@@ -187,19 +202,39 @@ describe("wallet-scoped heartbeat route boundary", () => {
     expect(submitToKeeperHub).not.toHaveBeenCalled();
   });
 
-  it("rejects a second check-in inside 24 hours before KeeperHub", async () => {
+  it("rejects a second check-in inside the on-chain interval", async () => {
     const submitToKeeperHub = vi.fn();
     await expect(
       executeSignedHeartbeat(
-        { ...request(), deadline: "96600" },
+        { ...request(), deadline: "10359" },
         dependencies({
-          nowSeconds: () => 10_000 + 86_399,
+          nowSeconds: () => 10_000 + 59,
           readLastHeartbeat: vi.fn().mockResolvedValue(10_000n),
+          readHeartbeatInterval: vi.fn().mockResolvedValue(60n),
           submitToKeeperHub,
         }),
       ),
     ).rejects.toMatchObject({ code: "HEARTBEAT_COOLDOWN" });
     expect(submitToKeeperHub).not.toHaveBeenCalled();
+  });
+
+  it("permits a check-in after a one-second on-chain interval", async () => {
+    const deps = dependencies({
+      nowSeconds: () => 10_001,
+      readLastHeartbeat: vi.fn().mockResolvedValue(10_000n),
+      readHeartbeatInterval: vi.fn().mockResolvedValue(1n),
+      verifyOnchain: vi.fn().mockResolvedValue({
+        receiptStatus: "success",
+        target: PLAN,
+        event: "HeartbeatRecorded",
+        lastHeartbeat: 10_001n,
+      }),
+    });
+
+    await expect(
+      executeSignedHeartbeat({ ...request(), deadline: "10301" }, deps),
+    ).resolves.toMatchObject({ stage: "verified" });
+    expect(deps.submitToKeeperHub).toHaveBeenCalledOnce();
   });
 
   it("uses a per-attempt idempotency key and returns independent proof", async () => {

@@ -4,6 +4,7 @@ import { useReadContracts } from "wagmi";
 import { useEffect, useState } from "react";
 import { type Address } from "viem";
 import { legacyKeeperAbi } from "./contract";
+import { confirmedRecoveryCountdown } from "./liveness-countdown";
 
 export interface Beneficiary {
   wallet: string;
@@ -70,13 +71,18 @@ export function useKeeper(planAddress?: Address): KeeperState {
   const gracePeriod = Number(cfg?.[2] ?? 0n);
   const dueAt = timeoutDuration + gracePeriod;
 
-  // The chain only updates on refetch; tick locally so the countdown moves.
-  const [tick, setTick] = useState(0);
+  const snapshotKey = `${planAddress ?? ""}:${status?.[0] ?? 0n}:${timeSince}`;
+  const [clock, setClock] = useState({ snapshotKey: "", tick: 0 });
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    const id = setInterval(
+      () => setClock((value) => ({ ...value, tick: value.tick + 1 })),
+      1000,
+    );
     return () => clearInterval(id);
   }, []);
-  useEffect(() => setTick(0), [timeSince]);
+  useEffect(() => setClock({ snapshotKey, tick: 0 }), [snapshotKey]);
+  const localTick = clock.snapshotKey === snapshotKey ? clock.tick : 0;
+  const graceElapsed = Boolean(timeout?.[1]);
 
   return {
     loading: isLoading,
@@ -89,7 +95,7 @@ export function useKeeper(planAddress?: Address): KeeperState {
     gracePeriod,
     livenessActive: Boolean(cfg?.[4]),
     timeoutExceeded: Boolean(timeout?.[0]),
-    graceElapsed: Boolean(timeout?.[1]),
+    graceElapsed,
     inheritanceExecuted: Boolean(read<boolean>(7)),
     inheritanceTimestamp: Number(read<bigint>(10) ?? 0n),
     evacuationExecuted: Boolean(read<boolean>(8)),
@@ -103,7 +109,12 @@ export function useKeeper(planAddress?: Address): KeeperState {
     })),
     totalShareBps: Number(read<number>(6) ?? 0),
     trackedTokens: [...(read<readonly string[]>(9) ?? [])],
-    secondsUntilDue: Math.max(0, dueAt - timeSince - tick),
+    secondsUntilDue: confirmedRecoveryCountdown({
+      configuredDuration: dueAt,
+      chainElapsed: timeSince,
+      localTick,
+      graceElapsed,
+    }),
     refetch,
   };
 }

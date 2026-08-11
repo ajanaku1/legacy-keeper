@@ -10,6 +10,13 @@ import {
 } from '@/lib/onboarding-draft';
 import { shortAddress } from '@/lib/format';
 import type { VerifiedPlanEvidence } from '@/lib/plan-route';
+import { CompoundTimingEditor } from '@/components/CompoundTimingEditor';
+import { TokenCatalogPicker } from '@/components/TokenCatalogPicker';
+import {
+  advancedTimingFromSeconds,
+  formatPlanDuration,
+  timingSeconds,
+} from '@/lib/timing';
 
 export const ONBOARDING_STEPS = [
   { label: 'Welcome' },
@@ -229,49 +236,88 @@ function WelcomeStep({
 
 function TimingStep({ editor }: { editor: StepEditor }) {
   const presets = [30, 60, 90, 180];
+  const advanced = Boolean(editor.draft.advancedTiming);
+  const zeroGrace = editor.draft.advancedTiming
+    ? timingSeconds(editor.draft.advancedTiming).grace === 0
+    : editor.draft.graceDays === 0;
+  const enableAdvanced = () =>
+    editor.change({
+      advancedTiming: advancedTimingFromSeconds(
+        editor.draft.timeoutDays * 86_400,
+        editor.draft.graceDays * 86_400,
+      ),
+    });
   return (
     <section className="step-panel">
       <StepIntro
         title="Choose when recovery can begin."
         body="The inactivity period starts after your last verified check-in. A grace period follows before inheritance can execute."
       />
-      <fieldset>
-        <legend>Inactivity period</legend>
-        <div className="preset-grid">
-          {presets.map((days) => (
-            <button
-              type="button"
-              className={
-                editor.draft.timeoutDays === days ? 'choice active' : 'choice'
-              }
-              aria-pressed={editor.draft.timeoutDays === days}
-              onClick={() => editor.change({ timeoutDays: days })}
-              key={days}
-            >
-              {days} days
-            </button>
-          ))}
+      {!advanced && (
+        <fieldset>
+          <legend>Inactivity period</legend>
+          <div className="preset-grid">
+            {presets.map((days) => (
+              <button
+                type="button"
+                className={
+                  editor.draft.timeoutDays === days ? 'choice active' : 'choice'
+                }
+                aria-pressed={editor.draft.timeoutDays === days}
+                onClick={() => editor.change({ timeoutDays: days })}
+                key={days}
+              >
+                {days} days
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      {!advanced && (
+        <div className="field-grid">
+          <NumberField
+            id="timeout-days"
+            label="Custom inactivity days"
+            value={editor.draft.timeoutDays}
+            onChange={(timeoutDays) => editor.change({ timeoutDays })}
+          />
+          <NumberField
+            id="grace-days"
+            label="Grace period days"
+            value={editor.draft.graceDays}
+            onChange={(graceDays) => editor.change({ graceDays })}
+          />
         </div>
-      </fieldset>
-      <div className="field-grid">
-        <NumberField
-          id="timeout-days"
-          label="Custom inactivity days"
-          value={editor.draft.timeoutDays}
-          onChange={(timeoutDays) => editor.change({ timeoutDays })}
+      )}
+      {!advanced && (
+        <p className="timeline-copy">
+          Last check-in → {editor.draft.timeoutDays} days inactive →{' '}
+          {editor.draft.graceDays}-day grace → inheritance eligible
+        </p>
+      )}
+      <button
+        type="button"
+        className="advanced-disclosure"
+        aria-expanded={advanced}
+        onClick={() =>
+          advanced
+            ? editor.change({ advancedTiming: undefined })
+            : enableAdvanced()
+        }
+      >
+        Advanced timing
+        <span>
+          {advanced ? 'Use days only' : 'Set days, hours, minutes, or seconds'}
+        </span>
+      </button>
+      {advanced && editor.draft.advancedTiming && (
+        <CompoundTimingEditor
+          idPrefix="onboarding-timing"
+          timing={editor.draft.advancedTiming}
+          onChange={(advancedTiming) => editor.change({ advancedTiming })}
         />
-        <NumberField
-          id="grace-days"
-          label="Grace period days"
-          value={editor.draft.graceDays}
-          onChange={(graceDays) => editor.change({ graceDays })}
-        />
-      </div>
-      <p className="timeline-copy">
-        Last check-in → {editor.draft.timeoutDays} days inactive →{' '}
-        {editor.draft.graceDays}-day grace → inheritance eligible
-      </p>
-      {editor.draft.graceDays === 0 && (
+      )}
+      {zeroGrace && (
         <p className="warning-note">
           Zero grace removes the final recovery window. Inheritance becomes
           callable as soon as inactivity expires and may already be callable.
@@ -417,11 +463,34 @@ function RecoveryStep({ editor }: { editor: StepEditor }) {
 }
 
 function AssetsStep({ editor }: { editor: StepEditor }) {
+  const [customOpen, setCustomOpen] = useState(false);
+  const addPreset = (token: { address: string; symbol: string }) => {
+    if (
+      editor.draft.assets.some(
+        (asset) => asset.address.toLowerCase() === token.address.toLowerCase(),
+      )
+    )
+      return;
+    editor.change({
+      assets: [
+        ...editor.draft.assets,
+        {
+          address: token.address,
+          symbol: token.symbol,
+          permitReadiness: 'unknown',
+        },
+      ],
+    });
+  };
   return (
     <section className="step-panel">
       <StepIntro
         title="Track assets now or add them later."
         body="Asset setup is optional. Tokens need allowance or permit readiness before an emergency sweep can move them."
+      />
+      <TokenCatalogPicker
+        selectedAddresses={editor.draft.assets.map((asset) => asset.address)}
+        onSelect={addPreset}
       />
       <div className="entry-list">
         {editor.draft.assets.map((asset, index) => (
@@ -434,19 +503,30 @@ function AssetsStep({ editor }: { editor: StepEditor }) {
         ))}
       </div>
       <button
-        className="secondary"
+        className="advanced-disclosure"
         type="button"
-        onClick={() =>
-          editor.change({
-            assets: [
-              ...editor.draft.assets,
-              { address: '', symbol: '', permitReadiness: 'unknown' },
-            ],
-          })
-        }
+        aria-expanded={customOpen}
+        onClick={() => setCustomOpen((open) => !open)}
       >
-        + Add ERC-20 token
+        Add custom token
+        <span>Enter a contract address</span>
       </button>
+      {customOpen && (
+        <button
+          className="secondary"
+          type="button"
+          onClick={() =>
+            editor.change({
+              assets: [
+                ...editor.draft.assets,
+                { address: '', symbol: '', permitReadiness: 'unknown' },
+              ],
+            })
+          }
+        >
+          + Add custom ERC-20
+        </button>
+      )}
       <label className="check-row">
         <input
           type="checkbox"
@@ -482,6 +562,12 @@ function AssetRow({
     );
     editor.change({ assets });
   };
+  const remove = () =>
+    editor.change({
+      assets: editor.draft.assets.filter(
+        (_entry, position) => position !== index,
+      ),
+    });
   return (
     <div className="entry-row asset-entry">
       <TextField
@@ -514,11 +600,17 @@ function AssetRow({
           <option value="unsupported">Allowance required</option>
         </select>
       </label>
+      <button className="remove-button" type="button" onClick={remove}>
+        Remove
+      </button>
     </div>
   );
 }
 
 function ReviewStep({ draft }: { draft: OnboardingDraft }) {
+  const timing = draft.advancedTiming
+    ? timingSeconds(draft.advancedTiming)
+    : undefined;
   return (
     <section className="step-panel">
       <StepIntro
@@ -529,7 +621,11 @@ function ReviewStep({ draft }: { draft: OnboardingDraft }) {
         <ReviewLine label="Owner" value={draft.owner} />
         <ReviewLine
           label="Timing"
-          value={`${draft.timeoutDays} days + ${draft.graceDays}-day grace`}
+          value={
+            timing
+              ? `${formatPlanDuration(timing.timeout)} + ${formatPlanDuration(timing.grace)} grace`
+              : `${draft.timeoutDays} days + ${draft.graceDays}-day grace`
+          }
         />
         <ReviewLine
           label="Beneficiaries"

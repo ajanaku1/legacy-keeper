@@ -71,6 +71,22 @@ function dependencies(
 }
 
 describe('plan creation route boundary', () => {
+  it('builds reviewed minute timing as exact contract seconds', () => {
+    const draft = {
+      ...createOnboardingDraft(OWNER, 11155111),
+      advancedTiming: {
+        inactivity: { days: 0, hours: 0, minutes: 10, seconds: 0 },
+        grace: { days: 0, hours: 0, minutes: 5, seconds: 0 },
+      },
+    };
+
+    expect(buildPlanCreationRequest(draft, 7n, 1_000).config).toMatchObject({
+      heartbeatInterval: 1,
+      timeoutDuration: 600,
+      gracePeriod: 300,
+    });
+  });
+
   it('accepts a zero grace period in a reviewed creation intent', () => {
     const zeroGraceRequest = {
       ...request(),

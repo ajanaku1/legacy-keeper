@@ -25,9 +25,9 @@ import {
   createKeeperHubClient,
   createSepoliaClient,
   readPlanOwner,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
   type RoutePublicClient,
 } from '@/lib/route-server';
 
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         const heartbeat = parseHeartbeatRequest(rawRequest);
         const verified = await executeSignedHeartbeat(
           heartbeat,
-          createDependencies(heartbeat)
+          createDependencies(heartbeat),
         );
         const notification = await notifyVerifiedAction({
           action: 'heartbeatBySig',
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
           txHash: verified.txHash,
         });
         return { ...verified, notification };
-      }
+      },
     );
     return NextResponse.json(evidence);
   } catch (error) {
@@ -68,16 +68,19 @@ export async function POST(request: NextRequest) {
 }
 
 function createDependencies(request: HeartbeatRequest): HeartbeatDependencies {
-  const factory = requiredFactory();
+  const factories = requiredFactories();
   const keeperHubKey = requiredEnv('KEEPERHUB_API_KEY');
   const webhookKey = requiredEnv('KEEPERHUB_WEBHOOK_API_KEY');
   const client = createSepoliaClient();
   const mcp = createKeeperHubClient(keeperHubKey);
   return {
     nowSeconds: () => Math.floor(Date.now() / 1_000),
-    readRegisteredPlan: (owner) => readRegisteredPlan(client, factory, owner),
+    readRegisteredPlan: (owner) =>
+      readRegisteredPlanAcrossFactories(client, factories, owner),
     readOwner: (plan) => readPlanOwner(client, plan),
     readLastHeartbeat: async (plan) => (await readLiveness(client, plan))[0],
+    readHeartbeatInterval: async (plan) =>
+      (await readLivenessConfig(client, plan))[0],
     recoverSigner: () => recoverHeartbeatSigner(request),
     nextIdempotencyKey: () => crypto.randomUUID(),
     submitToKeeperHub: (payload, idempotencyKey) =>
@@ -85,7 +88,7 @@ function createDependencies(request: HeartbeatRequest): HeartbeatDependencies {
         HEARTBEAT_WORKFLOW_ID,
         webhookKey,
         heartbeatWorkflowPayload(payload),
-        idempotencyKey
+        idempotencyKey,
       ),
     awaitSettlement: async (executionId) => {
       await mcp.connect();
@@ -96,7 +99,7 @@ function createDependencies(request: HeartbeatRequest): HeartbeatDependencies {
 }
 
 async function recoverHeartbeatSigner(
-  request: HeartbeatRequest
+  request: HeartbeatRequest,
 ): Promise<Address> {
   return recoverTypedDataAddress({
     domain: {
@@ -123,7 +126,7 @@ async function recoverHeartbeatSigner(
 async function verifyHeartbeat(
   client: RoutePublicClient,
   plan: Address,
-  txHash: `0x${string}`
+  txHash: `0x${string}`,
 ) {
   const receipt = await client.waitForTransactionReceipt({
     hash: txHash,
@@ -136,7 +139,7 @@ async function verifyHeartbeat(
     eventName: 'HeartbeatRecorded',
   });
   const event = events.find(
-    (item) => item.address.toLowerCase() === plan.toLowerCase()
+    (item) => item.address.toLowerCase() === plan.toLowerCase(),
   );
   const status = await readLiveness(client, plan);
   return {
@@ -147,13 +150,18 @@ async function verifyHeartbeat(
   };
 }
 
-function readLiveness(
-  client: RoutePublicClient,
-  plan: Address
-) {
+function readLiveness(client: RoutePublicClient, plan: Address) {
   return client.readContract({
     address: plan,
     abi: legacyKeeperAbi,
     functionName: 'getLivenessStatus',
+  });
+}
+
+function readLivenessConfig(client: RoutePublicClient, plan: Address) {
+  return client.readContract({
+    address: plan,
+    abi: legacyKeeperAbi,
+    functionName: 'liveness',
   });
 }

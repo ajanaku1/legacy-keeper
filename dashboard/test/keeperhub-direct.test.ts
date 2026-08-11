@@ -3,10 +3,12 @@ import type { Address, Hex } from "viem";
 import {
   parseDirectKeeperHubExecution,
   submitDirectInheritance,
+  submitDirectTokenInheritance,
   type KeeperHubToolClient,
 } from "../lib/keeperhub-server";
 
 const PLAN = "0x00000000000000000000000000000000000000a2" as Address;
+const TOKEN = "0x00000000000000000000000000000000000000a3" as Address;
 const TX_HASH = `0x${"2".repeat(64)}` as Hex;
 
 describe("KeeperHub direct inheritance execution", () => {
@@ -49,6 +51,24 @@ describe("KeeperHub direct inheritance execution", () => {
         },
       }),
     ).toEqual({ status: "completed", txHash: TX_HASH, sponsored: true });
+  });
+
+  it("submits token inheritance with the tracked token argument", async () => {
+    const callTool = vi.fn(async () =>
+      JSON.stringify({ execution_id: "kh-token" }),
+    );
+
+    await submitDirectTokenInheritance({ callTool }, PLAN, TOKEN, "token-key");
+
+    expect(callTool).toHaveBeenCalledWith(
+      "execute_contract_call",
+      expect.objectContaining({
+        contract_address: PLAN,
+        function_name: "executeInheritanceERC20",
+        function_args: JSON.stringify([TOKEN]),
+        idempotency_key: "token-key",
+      }),
+    );
   });
 
   it("fails closed when completed has no explicit success signal", () => {

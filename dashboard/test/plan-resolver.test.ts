@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { zeroAddress } from 'viem';
-import { resolvePlan, type FactoryReader } from '../lib/plan-resolver';
+import {
+  classifyFactoryPlans,
+  resolvePlan,
+  type FactoryReader,
+} from '../lib/plan-resolver';
 
 const owner = '0x1111111111111111111111111111111111111111' as const;
 const factory = '0x2222222222222222222222222222222222222222' as const;
@@ -11,6 +15,24 @@ function reader(result: `0x${string}`): FactoryReader {
 }
 
 describe('resolvePlan', () => {
+  it('prefers the current factory but preserves plans from a legacy factory', () => {
+    expect(classifyFactoryPlans(owner, [zeroAddress, plan], true)).toEqual({
+      status: 'resolved',
+      owner,
+      plan,
+    });
+    expect(
+      classifyFactoryPlans(owner, [zeroAddress, zeroAddress], true),
+    ).toEqual({
+      status: 'missing',
+      owner,
+    });
+    expect(classifyFactoryPlans(owner, [], false)).toEqual({
+      status: 'loading',
+      owner,
+    });
+  });
+
   it('waits for a connected owner before reading the factory', async () => {
     const result = await resolvePlan({
       owner: undefined,
@@ -33,13 +55,13 @@ describe('resolvePlan', () => {
 
   it('distinguishes a new wallet from a registered wallet', async () => {
     await expect(
-      resolvePlan({ owner, factory, reader: reader(zeroAddress) })
+      resolvePlan({ owner, factory, reader: reader(zeroAddress) }),
     ).resolves.toEqual({
       status: 'missing',
       owner,
     });
     await expect(
-      resolvePlan({ owner, factory, reader: reader(plan) })
+      resolvePlan({ owner, factory, reader: reader(plan) }),
     ).resolves.toEqual({
       status: 'resolved',
       owner,
@@ -55,7 +77,7 @@ describe('resolvePlan', () => {
     };
 
     await expect(
-      resolvePlan({ owner, factory, reader: failedReader })
+      resolvePlan({ owner, factory, reader: failedReader }),
     ).resolves.toEqual({
       status: 'error',
       message: 'Could not read your plan. Check your connection and try again.',

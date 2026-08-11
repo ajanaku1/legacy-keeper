@@ -22,7 +22,7 @@ const READ_ERROR =
   'Could not read your plan. Check your connection and try again.';
 
 export async function resolvePlan(
-  input: ResolvePlanInput
+  input: ResolvePlanInput,
 ): Promise<PlanResolution> {
   if (!input.owner) return { status: 'disconnected' };
   if (!input.factory) return { status: 'unconfigured' };
@@ -39,6 +39,16 @@ export function classifyPlan(owner: Address, plan?: Address): PlanResolution {
   if (!plan) return { status: 'loading', owner };
   if (plan === zeroAddress) return { status: 'missing', owner };
   return { status: 'resolved', owner, plan };
+}
+
+export function classifyFactoryPlans(
+  owner: Address,
+  plans: readonly Address[],
+  complete: boolean,
+): PlanResolution {
+  const plan = plans.find((candidate) => candidate !== zeroAddress);
+  if (plan) return { status: 'resolved', owner, plan };
+  return complete ? { status: 'missing', owner } : { status: 'loading', owner };
 }
 
 export function planReadError(): PlanResolution {

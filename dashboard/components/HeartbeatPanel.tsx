@@ -19,6 +19,7 @@ type AvailabilityCode =
   | "SETUP_INCOMPLETE"
   | "WRONG_OWNER"
   | "PLAN_SETTLED"
+  | "RECOVERY_ELIGIBLE"
   | "LIVENESS_INACTIVE"
   | "COOLDOWN"
   | "BUSY";
@@ -32,8 +33,10 @@ export interface CheckInState {
   livenessActive: boolean;
   inheritanceExecuted: boolean;
   evacuationExecuted: boolean;
+  graceElapsed: boolean;
   secondsUntilDue?: number;
   lastHeartbeat?: number;
+  heartbeatInterval?: number;
 }
 
 interface Props {
@@ -70,6 +73,11 @@ export function checkInAvailability(
     };
   if (state.inheritanceExecuted || state.evacuationExecuted)
     return { code: "PLAN_SETTLED", reason: "This plan has already settled." };
+  if (state.graceElapsed)
+    return {
+      code: "RECOVERY_ELIGIBLE",
+      reason: "Recovery is eligible. Submitting inheritance through KeeperHub.",
+    };
   if (!state.livenessActive)
     return {
       code: "LIVENESS_INACTIVE",
@@ -80,7 +88,11 @@ export function checkInAvailability(
       code: "BUSY",
       reason: "A check-in attempt is already in progress.",
     };
-  const cooldown = heartbeatCooldownRemaining(state.lastHeartbeat, nowSeconds);
+  const cooldown = heartbeatCooldownRemaining(
+    state.lastHeartbeat,
+    state.heartbeatInterval,
+    nowSeconds,
+  );
   if (cooldown > 0) {
     return {
       code: "COOLDOWN",

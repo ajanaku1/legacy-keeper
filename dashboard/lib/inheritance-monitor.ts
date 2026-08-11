@@ -71,11 +71,19 @@ export async function runInheritanceMonitor(
   const plans = await dependencies.listRegisteredPlans();
   const results: InheritanceMonitorResult[] = [];
   for (const plan of plans) {
-    const result = await inspectPlan(plan, dependencies);
+    const result = await runInheritancePlan(plan, dependencies);
     results.push(result);
-    await safelyRecord(result, dependencies);
   }
   return results;
+}
+
+export async function runInheritancePlan(
+  plan: RegisteredPlan,
+  dependencies: InheritanceMonitorDependencies,
+): Promise<InheritanceMonitorResult> {
+  const result = await inspectPlan(plan, dependencies);
+  await safelyRecord(result, dependencies);
+  return result;
 }
 
 async function inspectPlan(

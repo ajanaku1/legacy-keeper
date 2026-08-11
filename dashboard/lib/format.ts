@@ -15,9 +15,12 @@ export function splitDuration(totalSeconds: number) {
 }
 
 export function formatCountdown(totalSeconds: number): string {
-  const { days, hours, minutes } = splitDuration(totalSeconds);
+  const { days, hours, minutes, seconds } = splitDuration(totalSeconds);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(days)}·${pad(hours)}·${pad(minutes)}`;
+  if (days > 0) return `${days}d ${pad(hours)}h ${pad(minutes)}m`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+  if (minutes > 0) return `${minutes}m ${pad(seconds)}s`;
+  return `${seconds}s`;
 }
 
 export function formatClock(iso: string): string {

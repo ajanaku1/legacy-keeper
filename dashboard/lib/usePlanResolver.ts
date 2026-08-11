@@ -1,29 +1,38 @@
 'use client';
 
-import { useReadContract } from 'wagmi';
+import { useReadContracts } from 'wagmi';
 import { type Address } from 'viem';
 import {
-  LEGACY_KEEPER_FACTORY_ADDRESS,
+  LEGACY_KEEPER_FACTORY_ADDRESSES,
   legacyKeeperFactoryAbi,
 } from './contract';
 import {
-  classifyPlan,
+  classifyFactoryPlans,
   planReadError,
   type PlanResolution,
 } from './plan-resolver';
 
 export function usePlanResolver(owner?: Address): PlanResolution {
-  const factory = LEGACY_KEEPER_FACTORY_ADDRESS;
-  const read = useReadContract({
-    address: factory,
-    abi: legacyKeeperFactoryAbi,
-    functionName: 'planOf',
-    args: owner ? [owner] : undefined,
-    query: { enabled: Boolean(factory && owner) },
+  const factories = LEGACY_KEEPER_FACTORY_ADDRESSES;
+  const read = useReadContracts({
+    contracts: factories.map((address) => ({
+      address,
+      abi: legacyKeeperFactoryAbi,
+      functionName: 'planOf' as const,
+      args: owner ? [owner] : undefined,
+    })),
+    query: { enabled: Boolean(factories.length && owner) },
   });
 
   if (!owner) return { status: 'disconnected' };
-  if (!factory) return { status: 'unconfigured' };
+  if (factories.length === 0) return { status: 'unconfigured' };
   if (read.error) return planReadError();
-  return classifyPlan(owner, read.data);
+  const plans = (read.data ?? []).flatMap((item) =>
+    item.status === 'success' ? [item.result] : [],
+  );
+  return classifyFactoryPlans(
+    owner,
+    plans,
+    read.data?.length === factories.length,
+  );
 }

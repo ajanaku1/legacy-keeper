@@ -92,6 +92,28 @@ describe('onboarding draft storage', () => {
     });
   });
 
+  it('migrates the previous minute-based advanced timing draft', () => {
+    const storage = memoryStorage();
+    const legacy = {
+      ...validDraft(),
+      advancedTiming: {
+        unit: 'minutes',
+        heartbeat: 5,
+        timeout: 10,
+        grace: 5,
+      },
+    };
+    storage.setItem(
+      draftStorageKey(OWNER, 11155111),
+      JSON.stringify(legacy),
+    );
+
+    expect(loadOnboardingDraft(storage, OWNER, 11155111).advancedTiming).toEqual({
+      inactivity: { days: 0, hours: 0, minutes: 10, seconds: 0 },
+      grace: { days: 0, hours: 0, minutes: 5, seconds: 0 },
+    });
+  });
+
   it('falls back safely for corrupt data and isolates other wallets or chains', () => {
     const storage = memoryStorage();
     storage.setItem(draftStorageKey(OWNER, 11155111), '{broken');
@@ -146,6 +168,33 @@ describe('onboarding validation', () => {
     expect(
       validateOnboardingStep({ ...validDraft(), graceDays: 90 }, 2),
     ).toContain('Grace period must be shorter than the inactivity period.');
+  });
+
+  it('accepts reviewed minute timing while keeping advanced timing opt-in', () => {
+    const advanced = {
+      ...validDraft(),
+      advancedTiming: {
+        inactivity: { days: 0, hours: 0, minutes: 10, seconds: 0 },
+        grace: { days: 0, hours: 0, minutes: 5, seconds: 0 },
+      },
+    };
+
+    expect(
+      createOnboardingDraft(OWNER, 11155111).advancedTiming,
+    ).toBeUndefined();
+    expect(validateOnboardingStep(advanced, 2)).toEqual([]);
+    expect(
+      validateOnboardingStep(
+        {
+          ...advanced,
+          advancedTiming: {
+            ...advanced.advancedTiming,
+            inactivity: { days: 0, hours: 0, minutes: 0, seconds: 0 },
+          },
+        },
+        2,
+      ),
+    ).toContain('Inactivity must be at least one second.');
   });
 
   it('requires one to ten unique beneficiaries totaling exactly 100 percent', () => {

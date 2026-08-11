@@ -9,6 +9,20 @@ export const SEPOLIA_RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL ?? "";
 const factoryAddress = process.env.NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS;
 export const LEGACY_KEEPER_FACTORY_ADDRESS: Address | undefined =
   factoryAddress && isAddress(factoryAddress) ? factoryAddress : undefined;
+const legacyFactoryAddresses =
+  process.env.NEXT_PUBLIC_LEGACY_KEEPER_LEGACY_FACTORY_ADDRESSES ?? "";
+export const LEGACY_KEEPER_FACTORY_ADDRESSES: readonly Address[] = [
+  ...(LEGACY_KEEPER_FACTORY_ADDRESS ? [LEGACY_KEEPER_FACTORY_ADDRESS] : []),
+  ...legacyFactoryAddresses
+    .split(",")
+    .map((address) => address.trim())
+    .filter((address): address is Address => isAddress(address)),
+].filter(
+  (address, index, addresses) =>
+    addresses.findIndex(
+      (candidate) => candidate.toLowerCase() === address.toLowerCase(),
+    ) === index,
+);
 
 export const legacyKeeperFactoryAbi = [
   {

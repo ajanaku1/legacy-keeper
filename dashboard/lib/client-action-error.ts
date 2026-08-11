@@ -5,7 +5,7 @@ const REMEDIES: Record<ActionErrorCode, string> = {
   WRONG_NETWORK: "Switch to Sepolia, review the request, and try again.",
   SIGNATURE_EXPIRED: "The approval expired. Review and sign a new attempt.",
   HEARTBEAT_COOLDOWN:
-    "A plan can check in only once every 24 hours. Wait for the next window.",
+    "This plan is still inside its on-chain check-in interval. Wait for the displayed window.",
   PLAN_ALREADY_EXISTS: "This wallet already has a plan. Reload the dashboard.",
   PLAN_NOT_FOUND: "Finish plan setup before trying this action.",
   PLAN_MISMATCH: "Reload the plan from the factory registry and try again.",

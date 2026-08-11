@@ -13,9 +13,9 @@ import type { TelegramWalletLinkRecord } from "./telegram-repository";
 import { createTelegramEvacuationEntry } from "./telegram-evacuation";
 import {
   createSepoliaClient,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
 } from "./route-server";
 
 export function serverTelegramRepository() {
@@ -31,9 +31,9 @@ export function serverTelegramLinkService() {
     readRegisteredPlan: async (owner, chainId) => {
       if (chainId !== 11_155_111)
         return "0x0000000000000000000000000000000000000000";
-      return readRegisteredPlan(
+      return readRegisteredPlanAcrossFactories(
         createSepoliaClient(),
-        requiredFactory(),
+        requiredFactories(),
         owner,
       );
     },

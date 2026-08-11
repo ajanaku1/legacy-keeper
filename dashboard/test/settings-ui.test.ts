@@ -43,6 +43,35 @@ describe("editable plan settings", () => {
     );
   });
 
+  it("uses compact duration rows without exposing heartbeat cooldown", () => {
+    const editor = source("../components/settings/PlanSettingsEditor.tsx");
+    const onboarding = source("../components/onboarding/OnboardingModal.tsx");
+
+    for (const surface of [editor, onboarding]) {
+      expect(surface).toContain("Advanced timing");
+      expect(surface).toContain("aria-expanded={advanced");
+      expect(surface).toContain("<CompoundTimingEditor");
+      expect(surface).not.toContain('label="Check-in interval');
+      expect(surface).not.toContain("timing-unit-control");
+      expect(surface.indexOf('className="advanced-disclosure"')).toBeLessThan(
+        surface.indexOf("<CompoundTimingEditor"),
+      );
+    }
+
+    const compoundEditor = source("../components/CompoundTimingEditor.tsx");
+    expect(compoundEditor).not.toContain('placeholder="0"');
+  });
+
+  it("removes editing and stop controls after inheritance or evacuation", () => {
+    const editor = source("../components/settings/PlanSettingsEditor.tsx");
+
+    expect(editor).toContain("planIsTerminal(app.keeper)");
+    expect(editor).toContain("This plan is finalized");
+    expect(editor).toContain(
+      "Policy editing and stop controls are unavailable",
+    );
+  });
+
   it("mounts a signed plan settings editor from the settings page", () => {
     const page = source("../app/(application)/settings/page.tsx");
     const editorPath = new URL(

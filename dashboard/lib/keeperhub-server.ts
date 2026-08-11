@@ -24,6 +24,15 @@ const DIRECT_INHERITANCE_ABI = JSON.stringify([
     outputs: [],
   },
 ]);
+const DIRECT_TOKEN_INHERITANCE_ABI = JSON.stringify([
+  {
+    name: "executeInheritanceERC20",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "token", type: "address" }],
+    outputs: [],
+  },
+]);
 
 export interface KeeperHubToolClient {
   callTool(name: string, args: Record<string, unknown>): Promise<string>;
@@ -50,6 +59,29 @@ export async function submitDirectInheritance(
   ]);
   if (!executionId)
     throw new Error("KeeperHub returned no direct execution ID");
+  return { executionId };
+}
+
+export async function submitDirectTokenInheritance(
+  client: KeeperHubToolClient,
+  plan: Address,
+  token: Address,
+  idempotencyKey: string,
+): Promise<{ executionId: string }> {
+  const raw = await client.callTool("execute_contract_call", {
+    contract_address: plan,
+    chain_id: "11155111",
+    function_name: "executeInheritanceERC20",
+    function_args: JSON.stringify([token]),
+    idempotency_key: idempotencyKey,
+    abi: DIRECT_TOKEN_INHERITANCE_ABI,
+  });
+  const executionId = firstStringField(asObject(parseJson(raw)), [
+    "execution_id",
+    "executionId",
+    "id",
+  ]);
+  if (!executionId) throw new Error("KeeperHub returned no token execution ID");
   return { executionId };
 }
 

@@ -18,11 +18,46 @@ describe("scheduled inheritance entry point", () => {
     const route = readFileSync(routeUrl, "utf8");
     const workflow = readFileSync(workflowUrl, "utf8");
     expect(route).toContain("authorizeInheritanceMonitor");
+    expect(route).toContain("runTokenInheritanceMonitor");
     expect(route).toContain('request.headers.get("authorization")');
-    expect(workflow).toContain("cron: '2-57/5 * * * *'");
+    expect(workflow).toMatch(/cron:\s*["']2-57\/5 \* \* \* \*["']/);
     expect(workflow).toContain("/api/monitor/inheritance");
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("ACTIONS_ID_TOKEN_REQUEST_TOKEN");
+  });
+
+  it("uses a non-executing authentication check for manual dispatch", () => {
+    const route = readFileSync(
+      new URL("../app/api/monitor/inheritance/route.ts", import.meta.url),
+      "utf8",
+    );
+    const workflow = readFileSync(
+      new URL(
+        "../../.github/workflows/inheritance-monitor.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(route).toContain('request.nextUrl.searchParams.get("authOnly")');
+    expect(workflow).toContain("GITHUB_EVENT_NAME");
+    expect(workflow).toContain("?authOnly=1");
+  });
+
+  it("ships an immediate registry-validated trigger for an eligible open dashboard", () => {
+    const route = readFileSync(
+      new URL("../app/api/inheritance/route.ts", import.meta.url),
+      "utf8",
+    );
+    const dashboard = readFileSync(
+      new URL("../app/(application)/dashboard/page.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(route).toContain("runInheritanceTrigger");
+    expect(route).toContain("createInheritanceMonitorDependencies");
+    expect(dashboard).toContain("<AutomaticInheritanceTrigger");
+    expect(dashboard).toContain("graceElapsed: keeper.graceElapsed");
   });
 
   it("does not present a hardcoded KeeperHub health claim", () => {

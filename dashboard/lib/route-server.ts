@@ -1,8 +1,9 @@
-import { createPublicClient, http, type Address } from 'viem';
+import { createPublicClient, http, zeroAddress, type Address } from 'viem';
 import { loadProjectServerEnvironment } from './server-environment';
 import { McpClient } from '../../agent/keeperhub/mcp-client';
 import {
   LEGACY_KEEPER_FACTORY_ADDRESS,
+  LEGACY_KEEPER_FACTORY_ADDRESSES,
   legacyKeeperAbi,
   legacyKeeperFactoryAbi,
 } from './contract';
@@ -29,10 +30,15 @@ export function createKeeperHubClient(apiKey: string): McpClient {
 export function requiredFactory(): Address {
   if (!LEGACY_KEEPER_FACTORY_ADDRESS) {
     throw new Error(
-      'NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS is not configured.'
+      'NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS is not configured.',
     );
   }
   return LEGACY_KEEPER_FACTORY_ADDRESS;
+}
+
+export function requiredFactories(): readonly Address[] {
+  if (LEGACY_KEEPER_FACTORY_ADDRESSES.length === 0) requiredFactory();
+  return LEGACY_KEEPER_FACTORY_ADDRESSES;
 }
 
 export function requiredEnv(name: string, fallback?: string): string {
@@ -44,7 +50,7 @@ export function requiredEnv(name: string, fallback?: string): string {
 export function readRegisteredPlan(
   client: RoutePublicClient,
   factory: Address,
-  owner: Address
+  owner: Address,
 ) {
   return client.readContract({
     address: factory,
@@ -52,6 +58,17 @@ export function readRegisteredPlan(
     functionName: 'planOf',
     args: [owner],
   });
+}
+
+export async function readRegisteredPlanAcrossFactories(
+  client: RoutePublicClient,
+  factories: readonly Address[],
+  owner: Address,
+): Promise<Address> {
+  const plans = await Promise.all(
+    factories.map((factory) => readRegisteredPlan(client, factory, owner)),
+  );
+  return plans.find((plan) => plan !== zeroAddress) ?? zeroAddress;
 }
 
 export function readPlanOwner(client: RoutePublicClient, plan: Address) {
@@ -63,5 +80,8 @@ export function readPlanOwner(client: RoutePublicClient, plan: Address) {
 }
 
 function requiredRpcUrl(): string {
-  return requiredEnv('SEPOLIA_RPC_URL', process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL);
+  return requiredEnv(
+    'SEPOLIA_RPC_URL',
+    process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL,
+  );
 }

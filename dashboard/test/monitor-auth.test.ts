@@ -18,6 +18,27 @@ function verifier(claims = VALID_CLAIMS): MonitorTokenVerifier {
 }
 
 describe("inheritance monitor authentication", () => {
+  it("accepts manual dispatch from the same pinned workflow", async () => {
+    await expect(
+      authorizeInheritanceMonitor(
+        "Bearer short-lived-token",
+        verifier({ ...VALID_CLAIMS, event_name: "workflow_dispatch" }),
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it("accepts an environment-qualified subject for the pinned workflow", async () => {
+    await expect(
+      authorizeInheritanceMonitor(
+        "Bearer short-lived-token",
+        verifier({
+          ...VALID_CLAIMS,
+          sub: "repo:ajanaku1/legacy-keeper:environment:Production",
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it("accepts a verified token only for the exact scheduled workflow on main", async () => {
     await expect(
       authorizeInheritanceMonitor("Bearer short-lived-token", verifier()),

@@ -27,9 +27,9 @@ import {
   createKeeperHubClient,
   createSepoliaClient,
   readPlanOwner,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
   type RoutePublicClient,
 } from '@/lib/route-server';
 
@@ -45,20 +45,24 @@ const EVENT_ABI = parseAbi([
 export async function POST(request: NextRequest) {
   try {
     const rawRequest: unknown = await request.json();
-    const evidence = await runAuditedAction('evacuate', rawRequest, async () => {
-      const payload = parseHeartbeatRequest(rawRequest);
-      const verified = await executeSignedEvacuation(
-        payload,
-        createDependencies(payload)
-      );
-      const notification = await notifyVerifiedAction({
-        action: 'evacuate',
-        owner: payload.owner,
-        plan: verified.plan,
-        txHash: verified.txHash,
-      });
-      return { ...verified, notification };
-    });
+    const evidence = await runAuditedAction(
+      'evacuate',
+      rawRequest,
+      async () => {
+        const payload = parseHeartbeatRequest(rawRequest);
+        const verified = await executeSignedEvacuation(
+          payload,
+          createDependencies(payload),
+        );
+        const notification = await notifyVerifiedAction({
+          action: 'evacuate',
+          owner: payload.owner,
+          plan: verified.plan,
+          txHash: verified.txHash,
+        });
+        return { ...verified, notification };
+      },
+    );
     return NextResponse.json(evidence);
   } catch (error) {
     return NextResponse.json(actionErrorBody(error), { status: 422 });
@@ -66,14 +70,15 @@ export async function POST(request: NextRequest) {
 }
 
 function createDependencies(request: HeartbeatRequest): EvacuationDependencies {
-  const factory = requiredFactory();
+  const factories = requiredFactories();
   const keeperHubKey = requiredEnv('KEEPERHUB_API_KEY');
   const webhookKey = requiredEnv('KEEPERHUB_WEBHOOK_API_KEY');
   const client = createSepoliaClient();
   const mcp = createKeeperHubClient(keeperHubKey);
   return {
     nowSeconds: () => Math.floor(Date.now() / 1_000),
-    readRegisteredPlan: (owner) => readRegisteredPlan(client, factory, owner),
+    readRegisteredPlan: (owner) =>
+      readRegisteredPlanAcrossFactories(client, factories, owner),
     readOwner: (plan) => readPlanOwner(client, plan),
     readRecoveryState: (plan) => readRecoveryState(client, plan),
     recoverSigner: () => recoverEvacuationSigner(request),
@@ -83,7 +88,7 @@ function createDependencies(request: HeartbeatRequest): EvacuationDependencies {
         WORKFLOW_ID,
         webhookKey,
         evacuationWorkflowPayload(payload),
-        idempotencyKey
+        idempotencyKey,
       ),
     awaitSettlement: async (executionId) => {
       await mcp.connect();
@@ -119,7 +124,7 @@ function recoverEvacuationSigner(request: HeartbeatRequest): Promise<Address> {
 async function verifyEvacuation(
   client: RoutePublicClient,
   plan: Address,
-  txHash: `0x${string}`
+  txHash: `0x${string}`,
 ) {
   const receipt = await client.waitForTransactionReceipt({
     hash: txHash,
@@ -132,7 +137,7 @@ async function verifyEvacuation(
     eventName: 'EvacuationTriggered',
   });
   const event = logs.find(
-    (log) => log.address.toLowerCase() === plan.toLowerCase()
+    (log) => log.address.toLowerCase() === plan.toLowerCase(),
   );
   const evacuated = await client.readContract({
     address: plan,
@@ -147,12 +152,13 @@ async function verifyEvacuation(
   };
 }
 
-async function readRecoveryState(
-  client: RoutePublicClient,
-  plan: Address
-) {
+async function readRecoveryState(client: RoutePublicClient, plan: Address) {
   const [vault, evacuated] = await Promise.all([
-    client.readContract({ address: plan, abi: legacyKeeperAbi, functionName: 'vault' }),
+    client.readContract({
+      address: plan,
+      abi: legacyKeeperAbi,
+      functionName: 'vault',
+    }),
     client.readContract({
       address: plan,
       abi: legacyKeeperAbi,

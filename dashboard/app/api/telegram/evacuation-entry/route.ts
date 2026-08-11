@@ -3,9 +3,9 @@ import { legacyKeeperAbi } from "@/lib/contract";
 import { verifyTelegramEvacuationEntry } from "@/lib/telegram-evacuation";
 import {
   createSepoliaClient,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
 } from "@/lib/route-server";
 import { serverTelegramRepository } from "@/lib/telegram-server";
 
@@ -21,13 +21,15 @@ export async function GET(request: NextRequest) {
       now: () => new Date(),
     });
     const client = createSepoliaClient();
-    const registeredPlan = await readRegisteredPlan(
+    const registeredPlan = await readRegisteredPlanAcrossFactories(
       client,
-      requiredFactory(),
+      requiredFactories(),
       link.owner,
     );
     if (registeredPlan.toLowerCase() !== link.plan.toLowerCase()) {
-      throw new Error("Factory ownership no longer matches this recovery entry.");
+      throw new Error(
+        "Factory ownership no longer matches this recovery entry.",
+      );
     }
     const [vault, evacuationExecuted] = await Promise.all([
       client.readContract({
@@ -55,7 +57,9 @@ export async function GET(request: NextRequest) {
       {
         ok: false,
         message:
-          error instanceof Error ? error.message : "Recovery entry is unavailable.",
+          error instanceof Error
+            ? error.message
+            : "Recovery entry is unavailable.",
       },
       { status: 422 },
     );

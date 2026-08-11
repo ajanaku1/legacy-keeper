@@ -11,6 +11,8 @@ import { isAddress, zeroAddress, type Address } from "viem";
 import { usePublicClient, useSignTypedData, useWriteContract } from "wagmi";
 import { useApplication } from "@/components/shell/ApplicationShell";
 import { TelegramLinkPanel } from "@/components/telegram/TelegramLinkPanel";
+import { CompoundTimingEditor } from "@/components/CompoundTimingEditor";
+import { TokenCatalogPicker } from "@/components/TokenCatalogPicker";
 import {
   buildConfigurationRequest,
   submitConfiguration,
@@ -25,6 +27,13 @@ import { legacyKeeperAbi } from "@/lib/contract";
 import { configurationTypedData } from "@/lib/intent-signer";
 import { randomNonce } from "@/lib/plan-client";
 import { shortAddress } from "@/lib/format";
+import {
+  advancedTimingFromSeconds,
+  formatPlanDuration,
+  timingSeconds,
+  validateAdvancedTiming,
+  type AdvancedTiming,
+} from "@/lib/timing";
 
 const DAY = 86_400;
 const SEPOLIA = 11_155_111;
@@ -69,6 +78,10 @@ interface SettingsDraft {
   heartbeatDays: number;
   timeoutDays: number;
   graceDays: number;
+  heartbeatSeconds: number;
+  timeoutSeconds: number;
+  graceSeconds: number;
+  advancedTiming?: AdvancedTiming;
   recoveryKey: string;
   safeVault: string;
   allowSharedRecovery: boolean;
@@ -97,6 +110,7 @@ export function PlanSettingsEditor() {
     setView({ kind: "edit", section: next });
   };
   if (!plan || !app.address) return null;
+  if (planIsTerminal(app.keeper)) return <TerminalSettings />;
 
   return (
     <>
@@ -138,6 +152,10 @@ export function PlanSettingsEditor() {
       )}
     </>
   );
+}
+
+function planIsTerminal(keeper: Application["keeper"]): boolean {
+  return keeper.inheritanceExecuted || keeper.evacuationExecuted;
 }
 
 type Application = ReturnType<typeof useApplication>;
@@ -217,6 +235,22 @@ function SettingsRegister({
         active={app.keeper.livenessActive}
         deletePlan={deletePlan}
       />
+    </>
+  );
+}
+
+function TerminalSettings() {
+  return (
+    <>
+      <section className="settings-finalized" role="status">
+        <span className="section-label">Final onchain state</span>
+        <h2>This plan is finalized</h2>
+        <p>
+          Policy editing and stop controls are unavailable after inheritance or
+          emergency evacuation has executed.
+        </p>
+      </section>
+      <TelegramLinkPanel />
     </>
   );
 }
@@ -532,7 +566,7 @@ function registerSummary(section: Section, app: Application): string {
     return `${app.keeper.beneficiaries.length} wallets · ${app.keeper.totalShareBps / 100}%`;
   }
   if (section === "liveness") {
-    return `${formatDays(app.keeper.timeoutDuration)} + ${formatDays(app.keeper.gracePeriod)}`;
+    return `${formatPlanDuration(app.keeper.timeoutDuration)} + ${formatPlanDuration(app.keeper.gracePeriod)}`;
   }
   if (section === "recovery") {
     return shortAddress(app.keeper.safeVault, 8, 6);
@@ -545,11 +579,6 @@ function signerRequirement(section: Section, app: Application): string {
     return `Required signer · ${shortAddress(app.keeper.recoveryKey, 6, 4)}`;
   }
   return "Required signer · plan owner";
-}
-
-function formatDays(seconds: number): string {
-  if (!seconds) return "Not set";
-  return `${Math.round(seconds / DAY)} days`;
 }
 
 interface DialogContext {
@@ -906,30 +935,59 @@ function TimingEditor(props: {
 }) {
   const set = (patch: Partial<SettingsDraft>) =>
     props.setDraft({ ...props.draft, ...patch });
+  const advanced = Boolean(props.draft.advancedTiming);
+  const advancedTiming = props.draft.advancedTiming;
+  const zeroGrace = advancedTiming
+    ? timingSeconds(advancedTiming).grace === 0
+    : props.draft.graceDays === 0;
+  const enableAdvanced = () =>
+    set({
+      advancedTiming: advancedTimingFromSeconds(
+        props.draft.timeoutSeconds,
+        props.draft.graceSeconds,
+      ),
+    });
   return (
     <section className="settings-section">
       <EditorIntro
         title="Liveness timing"
-        body="Change how often check-ins are expected and how long recovery waits."
+        body="Set how long the plan waits after the last check-in before inheritance can execute."
       />
-      <div className="settings-field-grid">
-        <NumberInput
-          label="Check-in interval (days)"
-          value={props.draft.heartbeatDays}
-          onChange={(heartbeatDays) => set({ heartbeatDays })}
+      {!advanced && (
+        <div className="settings-field-grid">
+          <NumberInput
+            label="Inactivity (days)"
+            value={props.draft.timeoutDays}
+            onChange={(timeoutDays) => set({ timeoutDays })}
+          />
+          <NumberInput
+            label="Grace period (days)"
+            value={props.draft.graceDays}
+            onChange={(graceDays) => set({ graceDays })}
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        className="advanced-disclosure"
+        aria-expanded={advanced}
+        onClick={() =>
+          advanced ? set({ advancedTiming: undefined }) : enableAdvanced()
+        }
+      >
+        Advanced timing
+        <span>
+          {advanced ? "Use days only" : "Set days, hours, minutes, or seconds"}
+        </span>
+      </button>
+      {advanced && advancedTiming && (
+        <CompoundTimingEditor
+          idPrefix="settings-timing"
+          timing={advancedTiming}
+          onChange={(nextTiming) => set({ advancedTiming: nextTiming })}
         />
-        <NumberInput
-          label="Inactivity window (days)"
-          value={props.draft.timeoutDays}
-          onChange={(timeoutDays) => set({ timeoutDays })}
-        />
-        <NumberInput
-          label="Grace period (days)"
-          value={props.draft.graceDays}
-          onChange={(graceDays) => set({ graceDays })}
-        />
-      </div>
-      {props.draft.graceDays === 0 && (
+      )}
+      {zeroGrace && (
         <p className="warning-note">
           Zero grace removes the final recovery window. Inheritance becomes
           callable as soon as inactivity expires and may already be callable.
@@ -981,6 +1039,7 @@ function AssetEditor(props: {
   draft: SettingsDraft;
   setDraft: (draft: SettingsDraft) => void;
 }) {
+  const [customOpen, setCustomOpen] = useState(false);
   const update = (index: number, address: string) =>
     props.setDraft({
       ...props.draft,
@@ -993,6 +1052,15 @@ function AssetEditor(props: {
       <EditorIntro
         title="Tracked ERC-20 assets"
         body="Tracking does not move tokens. Allowance or permit readiness remains required."
+      />
+      <TokenCatalogPicker
+        selectedAddresses={props.draft.tokens}
+        onSelect={(token) =>
+          props.setDraft({
+            ...props.draft,
+            tokens: [...props.draft.tokens, token.address],
+          })
+        }
       />
       {props.draft.tokens.map((token, index) => (
         <div className="settings-entry asset-setting" key={`${index}-${token}`}>
@@ -1018,16 +1086,26 @@ function AssetEditor(props: {
         </div>
       ))}
       <button
-        className="secondary compact"
-        onClick={() =>
-          props.setDraft({
-            ...props.draft,
-            tokens: [...props.draft.tokens, ""],
-          })
-        }
+        className="advanced-disclosure"
+        aria-expanded={customOpen}
+        onClick={() => setCustomOpen((open) => !open)}
       >
-        + Add token
+        Add custom token
+        <span>Enter a contract address</span>
       </button>
+      {customOpen && (
+        <button
+          className="secondary compact"
+          onClick={() =>
+            props.setDraft({
+              ...props.draft,
+              tokens: [...props.draft.tokens, ""],
+            })
+          }
+        >
+          + Add custom ERC-20
+        </button>
+      )}
     </section>
   );
 }
@@ -1108,6 +1186,9 @@ function draftFrom(
     heartbeatDays: secondsToDays(keeper.heartbeatInterval),
     timeoutDays: secondsToDays(keeper.timeoutDuration),
     graceDays: secondsToDays(keeper.gracePeriod),
+    heartbeatSeconds: keeper.heartbeatInterval,
+    timeoutSeconds: keeper.timeoutDuration,
+    graceSeconds: keeper.gracePeriod,
     recoveryKey: keeper.recoveryKey ?? "",
     safeVault: keeper.safeVault ?? "",
     allowSharedRecovery: Boolean(
@@ -1153,11 +1234,12 @@ function beneficiaryError(entries: Entry[]): string {
 }
 
 function timingError(draft: SettingsDraft): string {
+  if (draft.advancedTiming) return validateAdvancedTiming(draft.advancedTiming);
   const values = [draft.heartbeatDays, draft.timeoutDays, draft.graceDays];
   if (values.some((value) => !Number.isInteger(value) || value < 0))
     return "Timing values must be whole days.";
-  if (draft.heartbeatDays < 1 || draft.timeoutDays < 1)
-    return "Check-in interval and inactivity window must be at least one day.";
+  if (draft.timeoutDays < 1)
+    return "Inactivity must be at least one day.";
   return "";
 }
 
@@ -1212,12 +1294,20 @@ function payloadFor(
         Math.round(sharePercent * 100),
       ),
     };
-  if (section === "liveness")
+  if (section === "liveness") {
+    const timing = draft.advancedTiming
+      ? timingSeconds(draft.advancedTiming)
+      : {
+          heartbeat: draft.heartbeatDays * DAY,
+          timeout: draft.timeoutDays * DAY,
+          grace: draft.graceDays * DAY,
+        };
     return {
-      heartbeatInterval: draft.heartbeatDays * DAY,
-      timeoutDuration: draft.timeoutDays * DAY,
-      gracePeriod: draft.graceDays * DAY,
+      heartbeatInterval: timing.heartbeat,
+      timeoutDuration: timing.timeout,
+      gracePeriod: timing.grace,
     };
+  }
   if (section === "recovery")
     return {
       recoveryKey: draft.recoveryKey as Address,

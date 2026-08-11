@@ -29,9 +29,9 @@ import {
   createKeeperHubClient,
   createSepoliaClient,
   readPlanOwner,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
   type RoutePublicClient,
 } from '@/lib/route-server';
 
@@ -52,7 +52,10 @@ export async function POST(request: NextRequest) {
       rawRequest,
       async () => {
         const intent = parseConfigurationRequest(rawRequest);
-        const verified = await executeConfiguration(intent, createDependencies(intent));
+        const verified = await executeConfiguration(
+          intent,
+          createDependencies(intent),
+        );
         const notification = await notifyVerifiedAction({
           action: 'configurePlan',
           configurationAction: intent.action,
@@ -61,7 +64,7 @@ export async function POST(request: NextRequest) {
           txHash: verified.txHash,
         });
         return { ...verified, notification };
-      }
+      },
     );
     return NextResponse.json(evidence);
   } catch (error) {
@@ -70,9 +73,9 @@ export async function POST(request: NextRequest) {
 }
 
 function createDependencies(
-  intent: ConfigurationRequest
+  intent: ConfigurationRequest,
 ): ConfigurationDependencies {
-  const factory = requiredFactory();
+  const factories = requiredFactories();
   const keeperHubKey = requiredEnv('KEEPERHUB_API_KEY');
   const webhookKey = requiredEnv('KEEPERHUB_WEBHOOK_API_KEY');
   const workflowId = requiredEnv('KEEPERHUB_CONFIGURATION_WORKFLOW_ID');
@@ -80,7 +83,8 @@ function createDependencies(
   const mcp = createKeeperHubClient(keeperHubKey);
   return {
     nowSeconds: () => Math.floor(Date.now() / 1000),
-    readRegisteredPlan: (owner) => readRegisteredPlan(client, factory, owner),
+    readRegisteredPlan: (owner) =>
+      readRegisteredPlanAcrossFactories(client, factories, owner),
     readPlanOwner: (plan) => readPlanOwner(client, plan),
     readExpectedSigner: (plan, action) =>
       readExpectedSigner(client, plan, action),
@@ -91,7 +95,7 @@ function createDependencies(
         workflowId,
         webhookKey,
         configurationWorkflowPayload(payload),
-        idempotencyKey
+        idempotencyKey,
       ),
     awaitSettlement: async (executionId) => {
       await mcp.connect();
@@ -103,7 +107,7 @@ function createDependencies(
 }
 
 async function recoverConfigurationSigner(
-  request: ConfigurationRequest
+  request: ConfigurationRequest,
 ): Promise<Address> {
   const typedData = configurationTypedData(request);
   const signature = request.signature as Hex;
@@ -122,7 +126,7 @@ async function recoverConfigurationSigner(
 async function verifyConfiguration(
   client: RoutePublicClient,
   request: ConfigurationRequest,
-  txHash: `0x${string}`
+  txHash: `0x${string}`,
 ) {
   const receipt = await client.waitForTransactionReceipt({
     hash: txHash,
@@ -134,7 +138,7 @@ async function verifyConfiguration(
   const event = events.find(
     (item) =>
       item.address.toLowerCase() === request.plan.toLowerCase() &&
-      item.eventName === expectedEvent
+      item.eventName === expectedEvent,
   );
   return {
     receiptStatus: receipt.status,
@@ -146,7 +150,7 @@ async function verifyConfiguration(
 
 async function resultingStateMatches(
   client: RoutePublicClient,
-  request: ConfigurationRequest
+  request: ConfigurationRequest,
 ): Promise<boolean> {
   const payload = request.payload;
   if ('wallets' in payload)
@@ -169,7 +173,7 @@ async function resultingStateMatches(
 async function beneficiariesMatch(
   client: RoutePublicClient,
   plan: Address,
-  payload: Extract<ConfigurationRequest['payload'], { wallets: Address[] }>
+  payload: Extract<ConfigurationRequest['payload'], { wallets: Address[] }>,
 ): Promise<boolean> {
   const [beneficiaries, total] = await Promise.all([
     client.readContract({
@@ -189,7 +193,7 @@ async function beneficiariesMatch(
     beneficiaries.every(
       (item, index) =>
         sameAddress(item.wallet, payload.wallets[index]) &&
-        Number(item.shareBps) === payload.shares[index]
+        Number(item.shareBps) === payload.shares[index],
     )
   );
 }
@@ -197,7 +201,10 @@ async function beneficiariesMatch(
 async function livenessMatches(
   client: RoutePublicClient,
   plan: Address,
-  payload: Extract<ConfigurationRequest['payload'], { heartbeatInterval: number }>
+  payload: Extract<
+    ConfigurationRequest['payload'],
+    { heartbeatInterval: number }
+  >,
 ): Promise<boolean> {
   const liveness = await client.readContract({
     address: plan,
@@ -214,7 +221,7 @@ async function livenessMatches(
 async function recoveryMatches(
   client: RoutePublicClient,
   plan: Address,
-  payload: Extract<ConfigurationRequest['payload'], { recoveryKey: Address }>
+  payload: Extract<ConfigurationRequest['payload'], { recoveryKey: Address }>,
 ): Promise<boolean> {
   const vault = await client.readContract({
     address: plan,
@@ -231,12 +238,16 @@ async function recoveryMatches(
 async function readExpectedSigner(
   client: RoutePublicClient,
   plan: Address,
-  action: ConfigurationAction
+  action: ConfigurationAction,
 ): Promise<Address> {
   if (action !== 'recovery') return readPlanOwner(client, plan);
   const [owner, vault] = await Promise.all([
     readPlanOwner(client, plan),
-    client.readContract({ address: plan, abi: legacyKeeperAbi, functionName: 'vault' }),
+    client.readContract({
+      address: plan,
+      abi: legacyKeeperAbi,
+      functionName: 'vault',
+    }),
   ]);
   return vault[2] ? (vault[1] as Address) : owner;
 }

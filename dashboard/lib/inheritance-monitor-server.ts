@@ -14,14 +14,20 @@ import {
 } from "./inheritance-monitor";
 import {
   submitDirectInheritance,
+  submitDirectTokenInheritance,
   waitForDirectKeeperHubSettlement,
 } from "./keeperhub-server";
 import {
+  type TokenInheritanceMonitorDependencies,
+  type TokenInheritanceMonitorResult,
+  type TokenInheritancePlanState,
+} from "./token-inheritance-monitor";
+import {
   createKeeperHubClient,
   createSepoliaClient,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
   type RoutePublicClient,
 } from "./route-server";
 import { serverActivityRepository } from "./activity-server";
@@ -32,19 +38,20 @@ const FACTORY_EVENTS = parseAbi([
 const INHERITANCE_EVENTS = parseAbi([
   "event InheritanceExecuted(address indexed executedBy, uint64 timestamp)",
 ]);
+const TOKEN_INHERITANCE_EVENTS = parseAbi([
+  "event InheritanceTransfer(address indexed beneficiary, address indexed token, uint256 amount)",
+]);
 
 export async function createInheritanceMonitorDependencies(): Promise<InheritanceMonitorDependencies> {
-  const factory = requiredFactory();
-  const deploymentBlock = BigInt(
-    requiredEnv("LEGACY_KEEPER_FACTORY_DEPLOYMENT_BLOCK", "11419543"),
-  );
+  const factories = requiredFactories();
+  const deployments = factoryDeployments(factories);
   const client = createSepoliaClient();
   const keeperHub = createKeeperHubClient(requiredEnv("KEEPERHUB_API_KEY"));
   await keeperHub.connect();
   return {
-    listRegisteredPlans: () =>
-      listRegisteredPlans(client, factory, deploymentBlock),
-    readRegisteredPlan: (owner) => readRegisteredPlan(client, factory, owner),
+    listRegisteredPlans: () => listAllRegisteredPlans(client, deployments),
+    readRegisteredPlan: (owner) =>
+      readRegisteredPlanAcrossFactories(client, factories, owner),
     readPlanState: (plan) => readPlanState(client, plan),
     submitInheritance: (plan, key) =>
       submitDirectInheritance(keeperHub, plan, key),
@@ -53,6 +60,59 @@ export async function createInheritanceMonitorDependencies(): Promise<Inheritanc
     verifyOnchain: (plan, txHash) => verifyInheritance(client, plan, txHash),
     recordResult,
   };
+}
+
+export async function createTokenInheritanceMonitorDependencies(): Promise<TokenInheritanceMonitorDependencies> {
+  const factories = requiredFactories();
+  const deployments = factoryDeployments(factories);
+  const client = createSepoliaClient();
+  const keeperHub = createKeeperHubClient(requiredEnv("KEEPERHUB_API_KEY"));
+  await keeperHub.connect();
+  return {
+    listRegisteredPlans: () => listAllRegisteredPlans(client, deployments),
+    readRegisteredPlan: (owner) =>
+      readRegisteredPlanAcrossFactories(client, factories, owner),
+    readPlanState: (plan) => readTokenPlanState(client, plan),
+    submitTokenInheritance: (plan, token, key) =>
+      submitDirectTokenInheritance(keeperHub, plan, token, key),
+    awaitSettlement: (executionId) =>
+      waitForDirectKeeperHubSettlement(keeperHub, executionId),
+    verifyOnchain: (plan, token, txHash) =>
+      verifyTokenInheritance(client, plan, token, txHash),
+    recordResult: recordTokenResult,
+  };
+}
+
+function factoryDeployments(factories: readonly Address[]) {
+  const primaryBlock = BigInt(
+    requiredEnv("LEGACY_KEEPER_FACTORY_DEPLOYMENT_BLOCK", "11419543"),
+  );
+  const legacyBlock = BigInt(
+    requiredEnv("LEGACY_KEEPER_LEGACY_FACTORY_DEPLOYMENT_BLOCK", "11419543"),
+  );
+  return factories.map((factory, index) => ({
+    factory,
+    deploymentBlock: index === 0 ? primaryBlock : legacyBlock,
+  }));
+}
+
+async function listAllRegisteredPlans(
+  client: RoutePublicClient,
+  deployments: readonly { factory: Address; deploymentBlock: bigint }[],
+): Promise<RegisteredPlan[]> {
+  const groups = await Promise.all(
+    deployments.map(({ factory, deploymentBlock }) =>
+      listRegisteredPlans(client, factory, deploymentBlock),
+    ),
+  );
+  const plans = groups.flat();
+  return plans.filter(
+    (entry, index) =>
+      plans.findIndex(
+        (candidate) =>
+          candidate.plan.toLowerCase() === entry.plan.toLowerCase(),
+      ) === index,
+  );
 }
 
 async function listRegisteredPlans(
@@ -100,6 +160,38 @@ async function readPlanState(
   };
 }
 
+async function readTokenPlanState(
+  client: RoutePublicClient,
+  plan: Address,
+): Promise<TokenInheritancePlanState> {
+  const base = await readPlanState(client, plan);
+  const tokens = await client.readContract({
+    address: plan,
+    abi: legacyKeeperAbi,
+    functionName: "getTrackedTokens",
+  });
+  const tokenStates = await Promise.all(
+    tokens.map(async (token) => {
+      const [pullableAmount, distributed] = await Promise.all([
+        client.readContract({
+          address: plan,
+          abi: legacyKeeperAbi,
+          functionName: "pullableAmount",
+          args: [token],
+        }),
+        client.readContract({
+          address: plan,
+          abi: legacyKeeperAbi,
+          functionName: "tokenDistributed",
+          args: [token],
+        }),
+      ]);
+      return { token, pullableAmount, distributed };
+    }),
+  );
+  return { ...base, tokens: tokenStates };
+}
+
 async function verifyInheritance(
   client: RoutePublicClient,
   plan: Address,
@@ -129,6 +221,42 @@ async function verifyInheritance(
   };
 }
 
+async function verifyTokenInheritance(
+  client: RoutePublicClient,
+  plan: Address,
+  token: Address,
+  txHash: Hex,
+) {
+  const receipt = await client.waitForTransactionReceipt({
+    hash: txHash,
+    confirmations: 1,
+    timeout: 60_000,
+  });
+  const events = parseEventLogs({
+    abi: TOKEN_INHERITANCE_EVENTS,
+    logs: receipt.logs,
+    eventName: "InheritanceTransfer",
+  });
+  const matching = events.find(
+    (event) =>
+      event.address.toLowerCase() === plan.toLowerCase() &&
+      event.args.token?.toLowerCase() === token.toLowerCase(),
+  );
+  const tokenDistributed = await client.readContract({
+    address: plan,
+    abi: legacyKeeperAbi,
+    functionName: "tokenDistributed",
+    args: [token],
+  });
+  return {
+    receiptStatus: receipt.status,
+    target: matching?.address,
+    event: matching ? "InheritanceTransfer" : undefined,
+    token: matching?.args.token,
+    tokenDistributed,
+  };
+}
+
 function matchingEventTarget(
   events: readonly { address: Address }[],
   plan: Address,
@@ -152,5 +280,26 @@ async function recordResult(value: InheritanceMonitorResult): Promise<void> {
     error: value.error ?? value.reason,
     errorCode:
       value.status === "failed" ? "INHERITANCE_MONITOR_FAILED" : undefined,
+  });
+}
+
+async function recordTokenResult(
+  value: TokenInheritanceMonitorResult,
+): Promise<void> {
+  if (value.status === "skipped") return;
+  await serverActivityRepository().append({
+    executionKey: `executeInheritanceERC20:${value.owner.toLowerCase()}:${value.plan.toLowerCase()}:${value.token.toLowerCase()}`,
+    owner: value.owner,
+    timestamp: new Date(),
+    trigger: { type: "scheduled", source: "vercel-cron" },
+    action: "executeInheritanceERC20",
+    keeperhubExecutionId: value.executionId,
+    txHash: value.txHash,
+    outcome: value.status === "executed" ? "success" : "failed",
+    error: value.error ?? value.reason,
+    errorCode:
+      value.status === "failed"
+        ? "TOKEN_INHERITANCE_MONITOR_FAILED"
+        : undefined,
   });
 }

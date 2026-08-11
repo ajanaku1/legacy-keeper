@@ -1,4 +1,10 @@
 import { isAddress, zeroAddress, type Address } from 'viem';
+import {
+  advancedTimingFromSeconds,
+  validateAdvancedTiming,
+  type AdvancedTiming,
+  type DurationParts,
+} from './timing';
 
 export const SEPOLIA_CHAIN_ID = 11155111;
 
@@ -26,6 +32,7 @@ export interface OnboardingDraft {
   step: number;
   timeoutDays: number;
   graceDays: number;
+  advancedTiming?: AdvancedTiming;
   beneficiaries: BeneficiaryDraft[];
   recoverySigner: string;
   safeVault: string;
@@ -150,6 +157,10 @@ function sessionErrors(
 }
 
 function timingErrors(draft: OnboardingDraft): string[] {
+  if (draft.advancedTiming) {
+    const error = validateAdvancedTiming(draft.advancedTiming);
+    return error ? [error] : [];
+  }
   const errors: string[] = [];
   if (!Number.isInteger(draft.timeoutDays) || draft.timeoutDays < 1)
     errors.push('Inactivity period must be at least one day.');
@@ -220,6 +231,9 @@ function safeDraft(draft: OnboardingDraft): OnboardingDraft {
     step: clampStep(draft.step),
     timeoutDays: draft.timeoutDays,
     graceDays: draft.graceDays,
+    advancedTiming: draft.advancedTiming
+      ? { ...draft.advancedTiming }
+      : undefined,
     beneficiaries: draft.beneficiaries.map(({ address, sharePercent }) => ({
       address,
       sharePercent,
@@ -253,6 +267,7 @@ function parseDraft(
     step: numberValue(value.step, fallback.step),
     timeoutDays: numberValue(value.timeoutDays, fallback.timeoutDays),
     graceDays: numberValue(value.graceDays, fallback.graceDays),
+    advancedTiming: advancedTimingValue(value.advancedTiming),
     beneficiaries: beneficiaryList(value.beneficiaries),
     recoverySigner: stringValue(value.recoverySigner),
     safeVault: stringValue(value.safeVault),
@@ -294,6 +309,29 @@ function numberValue(value: unknown, fallback: number): number {
 
 function permitValue(value: unknown): AssetDraft['permitReadiness'] {
   return value === 'supported' || value === 'unsupported' ? value : 'unknown';
+}
+
+function advancedTimingValue(value: unknown): AdvancedTiming | undefined {
+  if (!isRecord(value)) return undefined;
+  const inactivity = durationValue(value.inactivity);
+  const grace = durationValue(value.grace);
+  if (inactivity && grace) return { inactivity, grace };
+  if (value.unit !== 'minutes' && value.unit !== 'hours') return undefined;
+  const multiplier = value.unit === 'hours' ? 3_600 : 60;
+  return advancedTimingFromSeconds(
+    numberValue(value.timeout, 0) * multiplier,
+    numberValue(value.grace, 0) * multiplier,
+  );
+}
+
+function durationValue(value: unknown): DurationParts | undefined {
+  if (!isRecord(value)) return undefined;
+  return {
+    days: numberValue(value.days, 0),
+    hours: numberValue(value.hours, 0),
+    minutes: numberValue(value.minutes, 0),
+    seconds: numberValue(value.seconds, 0),
+  };
 }
 
 function clampStep(step: number): number {

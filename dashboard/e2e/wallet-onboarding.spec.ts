@@ -62,6 +62,7 @@ interface MockChainState {
   inheritanceTimestamp?: bigint;
   trackedTokens?: Address[];
   tokenDistributed?: boolean;
+  pullableAmount?: bigint;
 }
 
 test("keeps disconnected visitors on public or locked surfaces", async ({
@@ -129,6 +130,11 @@ test("shows tracked balances and replaces check-in after inheritance", async ({
   await expect(page.getByRole("button", { name: "Check in now" })).toHaveCount(
     0,
   );
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "This plan is finalized" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop plan" })).toHaveCount(0);
   if (process.env.CAPTURE_ASSETS) {
     await page
       .getByRole("heading", { name: "Tracked assets" })
@@ -137,6 +143,28 @@ test("shows tracked balances and replaces check-in after inheritance", async ({
       path: "/tmp/legacykeeper-inheritance-assets.png",
     });
   }
+});
+
+test("offers a bounded approval when an inherited token is not pullable", async ({
+  page,
+}) => {
+  await installWallet(page);
+  const state: MockChainState = {
+    planCreated: true,
+    heartbeatAt: BigInt(Math.floor(Date.now() / 1_000) - 172_800),
+    inheritanceExecuted: true,
+    trackedTokens: [TOKEN],
+    tokenDistributed: false,
+    pullableAmount: 0n,
+  };
+  await mockApplicationNetwork(page, state);
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+
+  await expect(
+    page.getByRole("button", { name: "Approve current balance" }),
+  ).toBeVisible();
+  await expect(page.getByText("Allowance needed")).toBeVisible();
 });
 
 async function completeOnboarding(page: Page): Promise<void> {
@@ -230,6 +258,23 @@ async function connectAndOpenOnboarding(page: Page): Promise<void> {
 
 async function completeTimingStep(page: Page): Promise<void> {
   await expectExactHeading(page, "Timing");
+  await expect(page.getByLabel("Check-in interval")).toHaveCount(0);
+  await page.getByRole("button", { name: /Advanced timing/ }).click();
+  await expect(page.getByLabel("Inactivity hours")).toHaveValue("");
+  await page.getByLabel("Inactivity days").fill("");
+  await page.getByLabel("Inactivity minutes").fill("10");
+  await page.getByLabel("Grace period days").fill("");
+  await page.getByLabel("Grace period minutes").fill("5");
+  await expect(
+    page.getByText("15 minutes after the last check-in", { exact: false }),
+  ).toBeVisible();
+  if (process.env.CAPTURE_TIMING) {
+    await page.screenshot({
+      path: "/tmp/legacykeeper-advanced-timing.png",
+      fullPage: true,
+    });
+  }
+  await page.getByRole("button", { name: /Advanced timing/ }).click();
   await page.getByRole("button", { name: "60 days" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
 }
@@ -246,6 +291,11 @@ async function completeRecoveryStep(page: Page): Promise<void> {
   await page.getByLabel("Safe vault address").fill(VAULT);
   await page.getByRole("button", { name: "Continue" }).click();
   await expectExactHeading(page, "Assets");
+  await expect(page.getByLabel("Search tokens")).toBeVisible();
+  await page.getByLabel("Search tokens").fill("chainlink");
+  await expect(page.getByRole("button", { name: /LINK/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /USDC/ })).toHaveCount(0);
+  await page.getByLabel("Search tokens").fill("");
 }
 
 async function verifyRouteNavigation(page: Page): Promise<void> {
@@ -559,7 +609,10 @@ function keeperReadResult(data: Hex, state: MockChainState): Hex {
     case "getTrackedTokens":
       return encodeKeeperResult("getTrackedTokens", state.trackedTokens ?? []);
     case "pullableAmount":
-      return encodeKeeperResult("pullableAmount", 1_000_000n);
+      return encodeKeeperResult(
+        "pullableAmount",
+        state.pullableAmount ?? 1_000_000n,
+      );
     case "tokenDistributed":
       return encodeKeeperResult(
         "tokenDistributed",

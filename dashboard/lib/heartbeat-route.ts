@@ -1,6 +1,5 @@
 import type { Address } from "viem";
 import { ActionError, withActionEvidence } from "./action-error";
-import { HEARTBEAT_COOLDOWN_SECONDS } from "./heartbeat-policy";
 import {
   assertSepolia,
   assertSettlement,
@@ -44,6 +43,7 @@ export interface HeartbeatDependencies {
   readRegisteredPlan: (owner: Address) => Promise<Address>;
   readOwner: (plan: Address) => Promise<Address>;
   readLastHeartbeat: (plan: Address) => Promise<bigint>;
+  readHeartbeatInterval: (plan: Address) => Promise<bigint>;
   recoverSigner: (request: HeartbeatRequest) => Promise<Address>;
   nextIdempotencyKey: () => string;
   submitToKeeperHub: (
@@ -115,8 +115,11 @@ export async function executeSignedHeartbeat(
     );
   }
   assertSigner(await dependencies.recoverSigner(request), owner);
-  const previousHeartbeat = await dependencies.readLastHeartbeat(request.plan);
-  assertHeartbeatCooldown(previousHeartbeat, nowSeconds);
+  const [previousHeartbeat, heartbeatInterval] = await Promise.all([
+    dependencies.readLastHeartbeat(request.plan),
+    dependencies.readHeartbeatInterval(request.plan),
+  ]);
+  assertHeartbeatCooldown(previousHeartbeat, heartbeatInterval, nowSeconds);
   const idempotencyKey = dependencies.nextIdempotencyKey();
   const submission = await dependencies.submitToKeeperHub(
     request,
@@ -162,13 +165,14 @@ export async function executeSignedHeartbeat(
 
 function assertHeartbeatCooldown(
   previousHeartbeat: bigint,
+  heartbeatInterval: bigint,
   nowSeconds: number,
 ): void {
-  const nextHeartbeat = previousHeartbeat + BigInt(HEARTBEAT_COOLDOWN_SECONDS);
+  const nextHeartbeat = previousHeartbeat + heartbeatInterval;
   if (previousHeartbeat > 0n && BigInt(nowSeconds) < nextHeartbeat) {
     throw new ActionError(
       "HEARTBEAT_COOLDOWN",
-      "A plan can check in only once during each rolling 24-hour window.",
+      "This plan is still inside its on-chain heartbeat interval.",
     );
   }
 }

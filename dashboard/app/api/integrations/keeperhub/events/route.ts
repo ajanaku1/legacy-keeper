@@ -6,9 +6,9 @@ import {
 import { sameAddress } from "@/lib/action-validation";
 import {
   createSepoliaClient,
-  readRegisteredPlan,
+  readRegisteredPlanAcrossFactories,
   requiredEnv,
-  requiredFactory,
+  requiredFactories,
 } from "@/lib/route-server";
 import { serverTelegramNotificationService } from "@/lib/telegram-server";
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
       {
         expectedSecret: requiredEnv("KEEPERHUB_EVENTS_SECRET"),
         readRegisteredPlan: (owner) =>
-          readRegisteredPlan(client, requiredFactory(), owner),
+          readRegisteredPlanAcrossFactories(client, requiredFactories(), owner),
         verifyOnchainEvidence: (event) => verifyReceipt(client, event),
         deliver: serverTelegramNotificationService().deliver,
       },

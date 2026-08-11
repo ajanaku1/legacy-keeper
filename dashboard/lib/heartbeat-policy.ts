@@ -1,9 +1,8 @@
-export const HEARTBEAT_COOLDOWN_SECONDS = 24 * 60 * 60;
-
 export function heartbeatCooldownRemaining(
   lastHeartbeat: number | undefined,
+  heartbeatInterval: number | undefined,
   nowSeconds: number,
 ): number {
-  if (!lastHeartbeat) return 0;
-  return Math.max(0, lastHeartbeat + HEARTBEAT_COOLDOWN_SECONDS - nowSeconds);
+  if (!lastHeartbeat || !heartbeatInterval) return 0;
+  return Math.max(0, lastHeartbeat + heartbeatInterval - nowSeconds);
 }

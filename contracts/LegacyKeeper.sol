@@ -63,9 +63,6 @@ contract LegacyKeeper {
 
     uint16 public constant TOTAL_BPS = 10000;
 
-    /// @dev A liveness proof cannot be spammed more than once per day.
-    uint256 private constant HEARTBEAT_COOLDOWN = 1 days;
-
     /// @dev Gas forwarded to a beneficiary on push. Enough for a plain
     ///      receive(), too little to reenter, and caps griefing cost.
     uint256 private constant PUSH_GAS = 30000;
@@ -258,7 +255,7 @@ contract LegacyKeeper {
 
     function _requireHeartbeatCooldown() private view {
         require(
-            block.timestamp >= uint256(liveness.lastHeartbeat) + HEARTBEAT_COOLDOWN,
+            block.timestamp >= uint256(liveness.lastHeartbeat) + liveness.heartbeatInterval,
             "LK: heartbeat cooldown"
         );
     }
