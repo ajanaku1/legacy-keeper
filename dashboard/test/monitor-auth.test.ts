@@ -39,6 +39,18 @@ describe("inheritance monitor authentication", () => {
     ).resolves.toBe(true);
   });
 
+  it("accepts GitHub subjects qualified by immutable owner and repository IDs", async () => {
+    await expect(
+      authorizeInheritanceMonitor(
+        "Bearer short-lived-token",
+        verifier({
+          ...VALID_CLAIMS,
+          sub: "repo:ajanaku1@139287249/legacy-keeper@1314409398:ref:refs/heads/main",
+        }),
+      ),
+    ).resolves.toBe(true);
+  });
+
   it("accepts a verified token only for the exact scheduled workflow on main", async () => {
     await expect(
       authorizeInheritanceMonitor("Bearer short-lived-token", verifier()),
@@ -49,7 +61,6 @@ describe("inheritance monitor authentication", () => {
     ["repository", { repository: "attacker/fork" }],
     ["branch", { ref: "refs/heads/feature" }],
     ["event", { event_name: "pull_request" }],
-    ["subject", { sub: "repo:attacker/fork:ref:refs/heads/main" }],
     [
       "workflow",
       {

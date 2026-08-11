@@ -31,13 +31,11 @@ export async function authorizeInheritanceMonitor(
 function expectedWorkflowClaims(claims: JWTPayload): boolean {
   const repository = String(claims.repository ?? "").toLowerCase();
   const workflow = String(claims.workflow_ref ?? "").toLowerCase();
-  const subject = String(claims.sub ?? "").toLowerCase();
   const event = String(claims.event_name ?? "");
   return (
     repository === EXPECTED_CLAIMS.repository &&
     claims.ref === EXPECTED_CLAIMS.ref &&
     workflow === EXPECTED_CLAIMS.workflow_ref &&
-    subject.startsWith(`repo:${EXPECTED_CLAIMS.repository}:`) &&
     ["schedule", "workflow_dispatch"].includes(event)
   );
 }
