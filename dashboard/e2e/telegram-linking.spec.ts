@@ -41,6 +41,15 @@ const MULTICALL_ABI = [
     ],
   },
 ] as const;
+const MULTICALL_BALANCE_ABI = [
+  {
+    type: "function",
+    name: "getEthBalance",
+    stateMutability: "view",
+    inputs: [{ name: "addr", type: "address" }],
+    outputs: [{ name: "balance", type: "uint256" }],
+  },
+] as const;
 
 test("links, tests, and unlinks Telegram without sharing plan authority", async ({
   page,
@@ -235,6 +244,13 @@ function planResult(): Hex {
 
 function keeperReadResult(data: Hex): Hex {
   if (data.startsWith("0x94a78483")) return planResult();
+  if (data.startsWith("0x4d2301cc")) {
+    return encodeFunctionResult({
+      abi: MULTICALL_BALANCE_ABI,
+      functionName: "getEthBalance",
+      result: 0n,
+    });
+  }
   const decoded = decodeFunctionData({ abi: legacyKeeperAbi, data });
   const heartbeatAt = BigInt(Math.floor(Date.now() / 1_000) - 86_400);
   const values: Record<string, unknown> = {

@@ -43,9 +43,12 @@ export default function DashboardPage() {
       />
       {keeper.inheritanceExecuted ? (
         <InheritanceOutcome
-          executedAt={keeper.inheritanceTimestamp}
-          beneficiaryCount={keeper.beneficiaries.length}
-          assets={assets}
+          state={{
+            plan,
+            executedAt: keeper.inheritanceTimestamp,
+            beneficiaryCount: keeper.beneficiaries.length,
+            assets,
+          }}
         />
       ) : (
         <HeartbeatPanel

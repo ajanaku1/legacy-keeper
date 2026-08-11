@@ -21,7 +21,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.21.0",
-    "wagmi": "^2.14.0"
+    "wagmi": "^2.14.0",
+    "workflow": "^4.8.0"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",

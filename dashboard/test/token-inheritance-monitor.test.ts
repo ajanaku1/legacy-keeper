@@ -62,6 +62,19 @@ describe("token inheritance monitor", () => {
     );
   });
 
+  it("uses the durable workflow step as the token retry idempotency scope", async () => {
+    const deps = dependencies();
+    deps.idempotencyKey = vi.fn(() => "workflow-step-2");
+
+    await runTokenInheritanceMonitor(deps);
+
+    expect(deps.submitTokenInheritance).toHaveBeenCalledWith(
+      PLAN,
+      TOKEN,
+      `workflow-step-2:${TOKEN.toLowerCase()}:execute-token-inheritance`,
+    );
+  });
+
   it.each([
     ["allowance-or-balance-missing", { pullableAmount: 0n }],
     ["already-distributed", { distributed: true }],

@@ -71,6 +71,10 @@ export interface TokenInheritanceMonitorDependencies {
     txHash: Hex,
   ): Promise<TokenInheritanceProof>;
   recordResult(result: TokenInheritanceMonitorResult): Promise<void>;
+  idempotencyKey?(
+    registered: RegisteredPlan,
+    state: TokenInheritancePlanState,
+  ): string;
 }
 
 export async function runTokenInheritanceMonitor(
@@ -153,7 +157,10 @@ async function executeToken(
   dependencies: TokenInheritanceMonitorDependencies,
 ): Promise<TokenInheritanceMonitorResult> {
   try {
-    const key = `${registered.plan.toLowerCase()}:${monitored.token.toLowerCase()}:${state.lastHeartbeat}:execute-token-inheritance`;
+    const workflowScope = dependencies.idempotencyKey?.(registered, state);
+    const key = workflowScope
+      ? `${workflowScope}:${monitored.token.toLowerCase()}:execute-token-inheritance`
+      : `${registered.plan.toLowerCase()}:${monitored.token.toLowerCase()}:${state.lastHeartbeat}:execute-token-inheritance`;
     const submission = await dependencies.submitTokenInheritance(
       registered.plan,
       monitored.token,

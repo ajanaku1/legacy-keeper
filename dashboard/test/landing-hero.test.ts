@@ -30,7 +30,7 @@ describe("landing continuity vault", () => {
 
     expect(page).toContain('id="operations"');
     expect(page).toContain('id="telegram-alerts"');
-    expect(page).toContain("Once-per-24-hour check-in");
+    expect(page).toContain("Owner-configured check-in");
     expect(page).toContain("Wallet-scoped activity");
     expect(page).toContain("Signed plan updates");
     expect(page).toContain("Two monitored wallets");
@@ -63,7 +63,8 @@ describe("landing motion helpers", () => {
     const controller = createVaultTiltController(
       () => ({
         style: {
-          setProperty: (name: string, value: string) => properties.set(name, value),
+          setProperty: (name: string, value: string) =>
+            properties.set(name, value),
         },
       }),
       (callback: FrameRequestCallback) => {

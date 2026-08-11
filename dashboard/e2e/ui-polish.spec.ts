@@ -20,7 +20,7 @@ test("landing presents the complete production feature story", async ({ page }) 
   await expect(page.getByText("Two monitored wallets")).toBeVisible();
   await expect(page.getByText(/Telegram never signs/i)).toBeVisible();
   await expect(
-    page.locator("#operations").getByText("Once-per-24-hour check-in"),
+    page.locator("#operations").getByText("Owner-configured check-in"),
   ).toBeVisible();
   await expect(page.getByText("Wallet-scoped activity")).toBeVisible();
   await expect(page.getByText("Signed plan updates")).toBeVisible();

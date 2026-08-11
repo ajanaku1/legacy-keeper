@@ -25,14 +25,16 @@ export function parseInheritanceTriggerRequest(value: unknown): RegisteredPlan {
   };
 }
 
+export interface InheritanceTriggerResult {
+  native: InheritanceMonitorResult;
+  tokens: TokenInheritanceMonitorResult[];
+}
+
 export async function runInheritanceTrigger(
   registered: RegisteredPlan,
   nativeDependencies: InheritanceMonitorDependencies,
   tokenDependencies: TokenInheritanceMonitorDependencies,
-): Promise<{
-  native: InheritanceMonitorResult;
-  tokens: TokenInheritanceMonitorResult[];
-}> {
+): Promise<InheritanceTriggerResult> {
   const native = await runInheritancePlan(registered, nativeDependencies);
   const tokens = await runTokenInheritancePlan(registered, tokenDependencies);
   return { native, tokens };

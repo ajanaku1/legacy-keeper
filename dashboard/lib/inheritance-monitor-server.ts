@@ -42,7 +42,15 @@ const TOKEN_INHERITANCE_EVENTS = parseAbi([
   "event InheritanceTransfer(address indexed beneficiary, address indexed token, uint256 amount)",
 ]);
 
-export async function createInheritanceMonitorDependencies(): Promise<InheritanceMonitorDependencies> {
+export interface MonitorDependencyOptions {
+  idempotencyScope?: string;
+  triggerSource?: string;
+}
+
+export async function createInheritanceMonitorDependencies(
+  options: MonitorDependencyOptions = {},
+): Promise<InheritanceMonitorDependencies> {
+  const idempotencyScope = options.idempotencyScope;
   const factories = requiredFactories();
   const deployments = factoryDeployments(factories);
   const client = createSepoliaClient();
@@ -58,11 +66,16 @@ export async function createInheritanceMonitorDependencies(): Promise<Inheritanc
     awaitSettlement: (executionId) =>
       waitForDirectKeeperHubSettlement(keeperHub, executionId),
     verifyOnchain: (plan, txHash) => verifyInheritance(client, plan, txHash),
-    recordResult,
+    recordResult: (result) =>
+      recordResult(result, options.triggerSource ?? "vercel-cron"),
+    idempotencyKey: idempotencyScope ? () => idempotencyScope : undefined,
   };
 }
 
-export async function createTokenInheritanceMonitorDependencies(): Promise<TokenInheritanceMonitorDependencies> {
+export async function createTokenInheritanceMonitorDependencies(
+  options: MonitorDependencyOptions = {},
+): Promise<TokenInheritanceMonitorDependencies> {
+  const idempotencyScope = options.idempotencyScope;
   const factories = requiredFactories();
   const deployments = factoryDeployments(factories);
   const client = createSepoliaClient();
@@ -79,7 +92,9 @@ export async function createTokenInheritanceMonitorDependencies(): Promise<Token
       waitForDirectKeeperHubSettlement(keeperHub, executionId),
     verifyOnchain: (plan, token, txHash) =>
       verifyTokenInheritance(client, plan, token, txHash),
-    recordResult: recordTokenResult,
+    recordResult: (result) =>
+      recordTokenResult(result, options.triggerSource ?? "vercel-cron"),
+    idempotencyKey: idempotencyScope ? () => idempotencyScope : undefined,
   };
 }
 
@@ -135,7 +150,7 @@ async function listRegisteredPlans(
   });
 }
 
-async function readPlanState(
+export async function readPlanState(
   client: RoutePublicClient,
   plan: Address,
 ): Promise<InheritancePlanState> {
@@ -160,7 +175,7 @@ async function readPlanState(
   };
 }
 
-async function readTokenPlanState(
+export async function readTokenPlanState(
   client: RoutePublicClient,
   plan: Address,
 ): Promise<TokenInheritancePlanState> {
@@ -266,13 +281,16 @@ function matchingEventTarget(
   )?.address;
 }
 
-async function recordResult(value: InheritanceMonitorResult): Promise<void> {
+async function recordResult(
+  value: InheritanceMonitorResult,
+  source: string,
+): Promise<void> {
   if (value.status === "skipped") return;
   await serverActivityRepository().append({
     executionKey: `executeInheritance:${value.owner.toLowerCase()}:${value.plan.toLowerCase()}`,
     owner: value.owner,
     timestamp: new Date(),
-    trigger: { type: "scheduled", source: "vercel-cron" },
+    trigger: { type: "scheduled", source },
     action: "executeInheritance",
     keeperhubExecutionId: value.executionId,
     txHash: value.txHash,
@@ -285,13 +303,14 @@ async function recordResult(value: InheritanceMonitorResult): Promise<void> {
 
 async function recordTokenResult(
   value: TokenInheritanceMonitorResult,
+  source: string,
 ): Promise<void> {
   if (value.status === "skipped") return;
   await serverActivityRepository().append({
     executionKey: `executeInheritanceERC20:${value.owner.toLowerCase()}:${value.plan.toLowerCase()}:${value.token.toLowerCase()}`,
     owner: value.owner,
     timestamp: new Date(),
-    trigger: { type: "scheduled", source: "vercel-cron" },
+    trigger: { type: "scheduled", source },
     action: "executeInheritanceERC20",
     keeperhubExecutionId: value.executionId,
     txHash: value.txHash,

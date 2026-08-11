@@ -1,26 +1,27 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import {
   parseAbi,
   parseEventLogs,
   recoverTypedDataAddress,
   type Address,
   type Hex,
-} from 'viem';
-import { runAuditedAction } from '@/lib/action-audit';
-import { actionErrorBody } from '@/lib/action-error';
-import { legacyKeeperAbi } from '@/lib/contract';
+} from "viem";
+import { runAuditedAction } from "@/lib/action-audit";
+import { actionErrorBody } from "@/lib/action-error";
+import { legacyKeeperAbi } from "@/lib/contract";
 import {
   executeSignedHeartbeat,
   parseHeartbeatRequest,
   type HeartbeatDependencies,
   type HeartbeatRequest,
-} from '@/lib/heartbeat-route';
+} from "@/lib/heartbeat-route";
 import {
   submitSignedWorkflowWebhook,
   waitForKeeperHubSettlement,
-} from '@/lib/keeperhub-server';
-import { heartbeatWorkflowPayload } from '@/lib/keeperhub-call-payload';
-import { notifyVerifiedAction } from '@/lib/telegram-notifications';
+} from "@/lib/keeperhub-server";
+import { heartbeatWorkflowPayload } from "@/lib/keeperhub-call-payload";
+import { notifyVerifiedAction } from "@/lib/telegram-notifications";
+import { signalInheritanceWatcher } from "@/lib/inheritance-watcher-control-server";
 import {
   createKeeperHubClient,
   createSepoliaClient,
@@ -29,22 +30,22 @@ import {
   requiredEnv,
   requiredFactories,
   type RoutePublicClient,
-} from '@/lib/route-server';
+} from "@/lib/route-server";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const HEARTBEAT_WORKFLOW_ID =
-  process.env.KEEPERHUB_HEARTBEAT_WORKFLOW_ID ?? 'ryd34r3ayrg2u8o29fmrk';
+  process.env.KEEPERHUB_HEARTBEAT_WORKFLOW_ID ?? "ryd34r3ayrg2u8o29fmrk";
 const HEARTBEAT_EVENT_ABI = parseAbi([
-  'event HeartbeatRecorded(address indexed sender, uint64 timestamp)',
+  "event HeartbeatRecorded(address indexed sender, uint64 timestamp)",
 ]);
 
 export async function POST(request: NextRequest) {
   try {
     const rawRequest: unknown = await request.json();
     const evidence = await runAuditedAction(
-      'heartbeatBySig',
+      "heartbeatBySig",
       rawRequest,
       async () => {
         const heartbeat = parseHeartbeatRequest(rawRequest);
@@ -52,13 +53,19 @@ export async function POST(request: NextRequest) {
           heartbeat,
           createDependencies(heartbeat),
         );
-        const notification = await notifyVerifiedAction({
-          action: 'heartbeatBySig',
-          owner: heartbeat.owner,
-          plan: verified.plan,
-          txHash: verified.txHash,
-        });
-        return { ...verified, notification };
+        const [notification, watcher] = await Promise.all([
+          notifyVerifiedAction({
+            action: "heartbeatBySig",
+            owner: heartbeat.owner,
+            plan: verified.plan,
+            txHash: verified.txHash,
+          }),
+          signalInheritanceWatcher(
+            { owner: heartbeat.owner, plan: verified.plan },
+            "heartbeat",
+          ),
+        ]);
+        return { ...verified, notification, watcher };
       },
     );
     return NextResponse.json(evidence);
@@ -69,8 +76,8 @@ export async function POST(request: NextRequest) {
 
 function createDependencies(request: HeartbeatRequest): HeartbeatDependencies {
   const factories = requiredFactories();
-  const keeperHubKey = requiredEnv('KEEPERHUB_API_KEY');
-  const webhookKey = requiredEnv('KEEPERHUB_WEBHOOK_API_KEY');
+  const keeperHubKey = requiredEnv("KEEPERHUB_API_KEY");
+  const webhookKey = requiredEnv("KEEPERHUB_WEBHOOK_API_KEY");
   const client = createSepoliaClient();
   const mcp = createKeeperHubClient(keeperHubKey);
   return {
@@ -103,18 +110,18 @@ async function recoverHeartbeatSigner(
 ): Promise<Address> {
   return recoverTypedDataAddress({
     domain: {
-      name: 'LegacyKeeper',
-      version: '1',
+      name: "LegacyKeeper",
+      version: "1",
       chainId: request.chainId,
       verifyingContract: request.plan,
     },
     types: {
       Heartbeat: [
-        { name: 'nonce', type: 'uint256' },
-        { name: 'deadline', type: 'uint256' },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
       ],
     },
-    primaryType: 'Heartbeat',
+    primaryType: "Heartbeat",
     message: {
       nonce: BigInt(request.nonce),
       deadline: BigInt(request.deadline),
@@ -136,7 +143,7 @@ async function verifyHeartbeat(
   const events = parseEventLogs({
     abi: HEARTBEAT_EVENT_ABI,
     logs: receipt.logs,
-    eventName: 'HeartbeatRecorded',
+    eventName: "HeartbeatRecorded",
   });
   const event = events.find(
     (item) => item.address.toLowerCase() === plan.toLowerCase(),
@@ -145,7 +152,7 @@ async function verifyHeartbeat(
   return {
     receiptStatus: receipt.status,
     target: event?.address,
-    event: event ? 'HeartbeatRecorded' : undefined,
+    event: event ? "HeartbeatRecorded" : undefined,
     lastHeartbeat: status[0],
   };
 }
@@ -154,7 +161,7 @@ function readLiveness(client: RoutePublicClient, plan: Address) {
   return client.readContract({
     address: plan,
     abi: legacyKeeperAbi,
-    functionName: 'getLivenessStatus',
+    functionName: "getLivenessStatus",
   });
 }
 
@@ -162,6 +169,6 @@ function readLivenessConfig(client: RoutePublicClient, plan: Address) {
   return client.readContract({
     address: plan,
     abi: legacyKeeperAbi,
-    functionName: 'liveness',
+    functionName: "liveness",
   });
 }

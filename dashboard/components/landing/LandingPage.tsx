@@ -2,7 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   createVaultTiltController,
   prefersReducedMotion,
@@ -12,6 +16,24 @@ import {
 import { WalletEntryButton } from "@/components/wallet/WalletEntryButton";
 import { PRODUCT_POSITIONING } from "@/lib/product-positioning";
 
+const CURRENT_FACTORY_PROOFS = [
+  {
+    label: "Current-factory inheritance 01",
+    detail: "KeeperHub 7c56umll4150i6jd7jqtk · native settlement",
+    tx: "0x1284eeb4deba522d2717e6056921fe31261632c226ab992a81d77922321a3ca9",
+  },
+  {
+    label: "Current-factory inheritance 02",
+    detail: "KeeperHub 95ivak6zbksfiw8w3yhad · receipt + event + state",
+    tx: "0xdc96cb02826a18982f4afc5701f59ef5f9155a5ea184e6e1b5292469ec7eec98",
+  },
+  {
+    label: "Approved USDC distribution",
+    detail: "KeeperHub 76camga0dxbeqrk48n81l · 324 USDC + 756 USDC",
+    tx: "0x13d7dfa6523afac9095324171da254712de7ee3e1a29b6d55ec76e5e5a279cdd",
+  },
+] as const;
+
 export function LandingPage() {
   return (
     <div className="landing-shell">
@@ -19,6 +41,7 @@ export function LandingPage() {
       <main id="main-content">
         <LandingHero />
         <TrustSeam />
+        <LiveEvidence />
         <ArchitectureSection />
         <OperationsSection />
         <ControlSection />
@@ -44,6 +67,7 @@ function LandingHeader() {
         <strong>LegacyKeeper</strong>
       </Link>
       <nav className="landing-nav" aria-label="Public navigation">
+        <a href="#live-proof">Live proof</a>
         <a href="#architecture">Proof model</a>
         <a href="#operations">Operations</a>
         <a href="#telegram-alerts">Telegram alerts</a>
@@ -145,7 +169,8 @@ function useVaultTilt() {
 
   const onPointerMove = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.pointerType !== "mouse" || prefersReducedMotion()) return;
-    const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
+    const { left, top, width, height } =
+      event.currentTarget.getBoundingClientRect();
     const horizontal = (event.clientX - left) / width - 0.5;
     const vertical = (event.clientY - top) / height - 0.5;
     controller.current?.queue(vertical * -10, horizontal * 10);
@@ -168,6 +193,55 @@ function TrustSeam() {
       <p>Receipt + event + state agreement</p>
       <strong>Fail closed</strong>
     </section>
+  );
+}
+
+function LiveEvidence() {
+  return (
+    <section
+      className="live-evidence"
+      id="live-proof"
+      aria-labelledby="live-proof-title"
+    >
+      <header>
+        <span className="section-label">Current-factory live proof</span>
+        <h2 id="live-proof-title">
+          Two inheritances. One approved token split.
+        </h2>
+        <p>Every row opens the successful Sepolia transaction directly.</p>
+      </header>
+      <ol>
+        {CURRENT_FACTORY_PROOFS.map((proof, index) => (
+          <EvidenceRow key={proof.tx} index={index} proof={proof} />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function EvidenceRow({
+  index,
+  proof,
+}: {
+  index: number;
+  proof: (typeof CURRENT_FACTORY_PROOFS)[number];
+}) {
+  return (
+    <li>
+      <span>{String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <strong>{proof.label}</strong>
+        <small>{proof.detail}</small>
+      </div>
+      <a
+        href={`https://sepolia.etherscan.io/tx/${proof.tx}`}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${proof.label} on Etherscan`}
+      >
+        {proof.tx.slice(0, 10)}… ↗
+      </a>
+    </li>
   );
 }
 
@@ -259,7 +333,7 @@ function ControlSection() {
         <ul className="control-list">
           <li>
             <span>Heartbeat</span>
-            <strong>Once-per-24-hour check-in</strong>
+            <strong>Owner-configured check-in</strong>
           </li>
           <li>
             <span>Inheritance</span>
@@ -287,15 +361,31 @@ function OperationsSection() {
         <span className="section-label">Operations / 02</span>
         <h2>A plan you can operate, not just deploy.</h2>
         <p>
-          Setup is guided, policy changes stay owner-signed, and every attempt is
-          retained beside its independent proof.
+          Setup is guided, policy changes stay owner-signed, and every attempt
+          is retained beside its independent proof.
         </p>
       </div>
       <ol className="operations-register">
-        <OperationRow index="01" title="Guided onboarding" detail="Seven resumable steps" />
-        <OperationRow index="02" title="Once-per-24-hour check-in" detail="Verified liveness" />
-        <OperationRow index="03" title="Signed plan updates" detail="Timing · people · recovery · assets" />
-        <OperationRow index="04" title="Wallet-scoped activity" detail="Five records per page" />
+        <OperationRow
+          index="01"
+          title="Guided onboarding"
+          detail="Seven resumable steps"
+        />
+        <OperationRow
+          index="02"
+          title="Owner-configured check-in"
+          detail="Verified liveness"
+        />
+        <OperationRow
+          index="03"
+          title="Signed plan updates"
+          detail="Timing · people · recovery · assets"
+        />
+        <OperationRow
+          index="04"
+          title="Wallet-scoped activity"
+          detail="Five records per page"
+        />
       </ol>
     </section>
   );
@@ -335,9 +425,18 @@ function TelegramSection() {
           never transaction authority.
         </p>
         <ul className="telegram-boundaries">
-          <li><span>Capacity</span><strong>Two monitored wallets</strong></li>
-          <li><span>Authority</span><strong>Telegram never signs</strong></li>
-          <li><span>Evacuation</span><strong>Recovery wallet required</strong></li>
+          <li>
+            <span>Capacity</span>
+            <strong>Two monitored wallets</strong>
+          </li>
+          <li>
+            <span>Authority</span>
+            <strong>Telegram never signs</strong>
+          </li>
+          <li>
+            <span>Evacuation</span>
+            <strong>Recovery wallet required</strong>
+          </li>
         </ul>
       </div>
     </section>
@@ -349,8 +448,13 @@ function TelegramProofPanel() {
     <div className="telegram-proof-panel">
       <header>
         <TelegramGlyph />
-        <div><small>NOTIFICATION CHANNEL</small><strong>Telegram alerts</strong></div>
-        <b><i /> Connected</b>
+        <div>
+          <small>NOTIFICATION CHANNEL</small>
+          <strong>Telegram alerts</strong>
+        </div>
+        <b>
+          <i /> Connected
+        </b>
       </header>
       <div className="telegram-proof-route">
         <ProofStep number="01" label="Private identity" value="Bot detected" />
@@ -392,10 +496,14 @@ function TelegramGlyph() {
 function LandingCallToAction() {
   return (
     <section className="landing-cta">
-      <span className="section-label">Your wallet. Your agent. Your rules.</span>
+      <span className="section-label">
+        Your wallet. Your agent. Your rules.
+      </span>
       <h2>Set the rules before they are needed.</h2>
       <WalletEntryButton />
-      <p>One plan per wallet · two Telegram links · Sepolia testnet · no custody</p>
+      <p>
+        One plan per wallet · two Telegram links · Sepolia testnet · no custody
+      </p>
     </section>
   );
 }

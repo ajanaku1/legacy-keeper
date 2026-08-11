@@ -79,6 +79,9 @@ describe("dashboard information hierarchy", () => {
     expect(outcome).toContain("Inheritance executed");
     expect(outcome).toContain("Token distributions");
     expect(outcome).toContain('href="/activity"');
+    expect(outcome).toContain("View plan state");
+    expect(outcome).toContain("${EXPLORER}/address/${plan}");
+    expect(page).toContain("plan,");
     expect(page).toContain("recoveryEligibility(keeper, resolved)");
     expect(page).toMatch(
       /if \(keeper\.inheritanceExecuted\) return ["']Executed["']/,

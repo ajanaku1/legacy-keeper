@@ -2,6 +2,46 @@ import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("scheduled inheritance entry point", () => {
+  it("ships a durable Vercel workflow and keeps GitHub as reconciliation fallback", () => {
+    const durableWorkflowUrl = new URL(
+      "../workflows/inheritance-watcher.ts",
+      import.meta.url,
+    );
+    const nextConfigUrl = new URL("../next.config.mjs", import.meta.url);
+    const watcherServerUrl = new URL(
+      "../lib/inheritance-watcher-server.ts",
+      import.meta.url,
+    );
+    const planRouteUrl = new URL("../app/api/plans/route.ts", import.meta.url);
+    const heartbeatRouteUrl = new URL(
+      "../app/api/heartbeat/route.ts",
+      import.meta.url,
+    );
+    const configurationRouteUrl = new URL(
+      "../app/api/configuration/route.ts",
+      import.meta.url,
+    );
+
+    expect(existsSync(durableWorkflowUrl)).toBe(true);
+    const durableWorkflow = readFileSync(durableWorkflowUrl, "utf8");
+    const nextConfig = readFileSync(nextConfigUrl, "utf8");
+    const watcherServer = readFileSync(watcherServerUrl, "utf8");
+    const planRoute = readFileSync(planRouteUrl, "utf8");
+    const heartbeatRoute = readFileSync(heartbeatRouteUrl, "utf8");
+    const configurationRoute = readFileSync(configurationRouteUrl, "utf8");
+
+    expect(durableWorkflow).toContain('"use workflow"');
+    expect(durableWorkflow).toContain("createHook");
+    expect(durableWorkflow).toContain("sleep(new Date");
+    expect(durableWorkflow).toContain('"use step"');
+    expect(durableWorkflow).toContain("getStepMetadata");
+    expect(watcherServer).toContain('triggerSource: "vercel-workflow"');
+    expect(nextConfig).toContain("withWorkflow");
+    expect(planRoute).toContain("startInheritanceWatcher");
+    expect(heartbeatRoute).toContain("signalInheritanceWatcher");
+    expect(configurationRoute).toContain("signalInheritanceWatcher");
+  });
+
   it("ships an authenticated monitor route and five-minute scheduler", () => {
     const routeUrl = new URL(
       "../app/api/monitor/inheritance/route.ts",

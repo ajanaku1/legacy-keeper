@@ -1,22 +1,32 @@
 "use client";
 
 import Link from "next/link";
+import type { Address } from "viem";
+import { EXPLORER } from "@/lib/contract";
 import type { TrackedAssetState } from "@/lib/useTrackedAssets";
 
-interface Props {
+export interface InheritanceOutcomeState {
+  plan?: Address;
   executedAt: number;
   beneficiaryCount: number;
   assets: TrackedAssetState;
 }
 
-export function InheritanceOutcome({
-  executedAt,
-  beneficiaryCount,
-  assets,
-}: Props) {
+interface Props {
+  state: InheritanceOutcomeState;
+}
+
+export function InheritanceOutcome({ state }: Props) {
+  const { plan, executedAt, beneficiaryCount, assets } = state;
   const distributedTokens = assets.assets.filter(
     (asset) => asset.distributed,
   ).length;
+  const metrics = {
+    executedAt,
+    beneficiaryCount,
+    tokenCount: assets.assets.length,
+    distributedTokens,
+  };
 
   return (
     <section
@@ -30,38 +40,46 @@ export function InheritanceOutcome({
           Native distribution is final and owner check-ins are closed. Tracked
           ERC-20 distributions remain independently verifiable below.
         </p>
-        <Link href="/activity">Open verified execution evidence ↗</Link>
+        <div className="inheritance-proof-links">
+          <Link href="/activity">Open verified execution evidence ↗</Link>
+          {plan && (
+            <a
+              href={`${EXPLORER}/address/${plan}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View plan state ↗
+            </a>
+          )}
+        </div>
       </div>
-      <InheritanceMetrics
-        executedAt={executedAt}
-        beneficiaryCount={beneficiaryCount}
-        tokenCount={assets.assets.length}
-        distributedTokens={distributedTokens}
-      />
+      <InheritanceMetrics metrics={metrics} />
     </section>
   );
 }
 
-function InheritanceMetrics(props: {
+interface InheritanceMetricState {
   executedAt: number;
   beneficiaryCount: number;
   tokenCount: number;
   distributedTokens: number;
-}) {
+}
+
+function InheritanceMetrics({ metrics }: { metrics: InheritanceMetricState }) {
   return (
     <dl className="inheritance-metrics">
       <OutcomeMetric
         label="Executed"
-        value={formatTimestamp(props.executedAt)}
+        value={formatTimestamp(metrics.executedAt)}
       />
       <OutcomeMetric
         label="Beneficiaries"
-        value={String(props.beneficiaryCount)}
+        value={String(metrics.beneficiaryCount)}
       />
       <OutcomeMetric
         label="Token distributions"
-        value={tokenProgress(props.tokenCount, props.distributedTokens)}
-        warning={props.distributedTokens < props.tokenCount}
+        value={tokenProgress(metrics.tokenCount, metrics.distributedTokens)}
+        warning={metrics.distributedTokens < metrics.tokenCount}
       />
     </dl>
   );

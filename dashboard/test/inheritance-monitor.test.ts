@@ -70,6 +70,18 @@ describe("inheritance monitor", () => {
     expect(deps.recordResult).toHaveBeenCalledWith(result);
   });
 
+  it("uses the durable workflow step as the retry idempotency scope", async () => {
+    const deps = dependencies();
+    deps.idempotencyKey = vi.fn(() => "workflow-step-1");
+
+    await runInheritanceMonitor(deps);
+
+    expect(deps.submitInheritance).toHaveBeenCalledWith(
+      PLAN_A,
+      "workflow-step-1:execute-inheritance",
+    );
+  });
+
   it.each([
     ["inactive", { livenessActive: false }],
     ["not-due", { graceElapsed: false }],

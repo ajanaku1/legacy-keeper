@@ -22,7 +22,11 @@ export function Providers({
   );
 
   return (
-    <WagmiProvider config={wagmiConfig} initialState={initialState}>
+    <WagmiProvider
+      config={wagmiConfig}
+      initialState={initialState}
+      reconnectOnMount={Boolean(initialState)}
+    >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </WagmiProvider>
   );

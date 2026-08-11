@@ -698,9 +698,15 @@ h2 {
   color: var(--muted);
 }
 
-.inheritance-outcome-copy > a {
-  display: inline-flex;
+.inheritance-proof-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
   margin-top: var(--space-5);
+}
+
+.inheritance-proof-links a {
+  display: inline-flex;
   color: var(--green);
   text-decoration: none;
 }

@@ -63,6 +63,10 @@ export interface InheritanceMonitorDependencies {
   awaitSettlement(executionId: string): Promise<InheritanceSettlement>;
   verifyOnchain(plan: Address, txHash: Hex): Promise<InheritanceProof>;
   recordResult(result: InheritanceMonitorResult): Promise<void>;
+  idempotencyKey?(
+    registered: RegisteredPlan,
+    state: InheritancePlanState,
+  ): string;
 }
 
 export async function runInheritanceMonitor(
@@ -114,7 +118,10 @@ async function executePlan(
   state: InheritancePlanState,
   dependencies: InheritanceMonitorDependencies,
 ): Promise<InheritanceMonitorResult> {
-  const idempotencyKey = `${registered.plan.toLowerCase()}:${state.lastHeartbeat}:execute-inheritance`;
+  const scope =
+    dependencies.idempotencyKey?.(registered, state) ??
+    `${registered.plan.toLowerCase()}:${state.lastHeartbeat}`;
+  const idempotencyKey = `${scope}:execute-inheritance`;
   const submission = await dependencies.submitInheritance(
     registered.plan,
     idempotencyKey,

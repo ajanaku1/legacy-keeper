@@ -1,14 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 import {
   parseAbi,
   parseEventLogs,
   recoverTypedDataAddress,
   type Address,
   type Hex,
-} from 'viem';
-import { runAuditedAction } from '@/lib/action-audit';
-import { actionErrorBody } from '@/lib/action-error';
-import { sameAddress } from '@/lib/action-validation';
+} from "viem";
+import { runAuditedAction } from "@/lib/action-audit";
+import { actionErrorBody } from "@/lib/action-error";
+import { sameAddress } from "@/lib/action-validation";
 import {
   eventFor,
   executeConfiguration,
@@ -16,15 +16,16 @@ import {
   type ConfigurationAction,
   type ConfigurationDependencies,
   type ConfigurationRequest,
-} from '@/lib/configuration-route';
-import { legacyKeeperAbi } from '@/lib/contract';
-import { configurationTypedData } from '@/lib/intent-signer';
-import { configurationWorkflowPayload } from '@/lib/keeperhub-call-payload';
-import { notifyVerifiedAction } from '@/lib/telegram-notifications';
+} from "@/lib/configuration-route";
+import { legacyKeeperAbi } from "@/lib/contract";
+import { configurationTypedData } from "@/lib/intent-signer";
+import { configurationWorkflowPayload } from "@/lib/keeperhub-call-payload";
+import { notifyVerifiedAction } from "@/lib/telegram-notifications";
+import { signalInheritanceWatcher } from "@/lib/inheritance-watcher-control-server";
 import {
   submitSignedWorkflowWebhook,
   waitForKeeperHubSettlement,
-} from '@/lib/keeperhub-server';
+} from "@/lib/keeperhub-server";
 import {
   createKeeperHubClient,
   createSepoliaClient,
@@ -33,22 +34,22 @@ import {
   requiredEnv,
   requiredFactories,
   type RoutePublicClient,
-} from '@/lib/route-server';
+} from "@/lib/route-server";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const CONFIG_EVENTS = parseAbi([
-  'event BeneficiaryAdded(address indexed wallet, uint16 shareBps)',
-  'event TrackedTokensUpdated(uint256 count)',
-  'event ConfigUpdated(string key)',
+  "event BeneficiaryAdded(address indexed wallet, uint16 shareBps)",
+  "event TrackedTokensUpdated(uint256 count)",
+  "event ConfigUpdated(string key)",
 ]);
 
 export async function POST(request: NextRequest) {
   try {
     const rawRequest: unknown = await request.json();
     const evidence = await runAuditedAction(
-      'configurePlan',
+      "configurePlan",
       rawRequest,
       async () => {
         const intent = parseConfigurationRequest(rawRequest);
@@ -56,14 +57,20 @@ export async function POST(request: NextRequest) {
           intent,
           createDependencies(intent),
         );
-        const notification = await notifyVerifiedAction({
-          action: 'configurePlan',
-          configurationAction: intent.action,
-          owner: intent.owner,
-          plan: verified.plan,
-          txHash: verified.txHash,
-        });
-        return { ...verified, notification };
+        const [notification, watcher] = await Promise.all([
+          notifyVerifiedAction({
+            action: "configurePlan",
+            configurationAction: intent.action,
+            owner: intent.owner,
+            plan: verified.plan,
+            txHash: verified.txHash,
+          }),
+          signalInheritanceWatcher(
+            { owner: intent.owner, plan: verified.plan },
+            "configuration",
+          ),
+        ]);
+        return { ...verified, notification, watcher };
       },
     );
     return NextResponse.json(evidence);
@@ -76,9 +83,9 @@ function createDependencies(
   intent: ConfigurationRequest,
 ): ConfigurationDependencies {
   const factories = requiredFactories();
-  const keeperHubKey = requiredEnv('KEEPERHUB_API_KEY');
-  const webhookKey = requiredEnv('KEEPERHUB_WEBHOOK_API_KEY');
-  const workflowId = requiredEnv('KEEPERHUB_CONFIGURATION_WORKFLOW_ID');
+  const keeperHubKey = requiredEnv("KEEPERHUB_API_KEY");
+  const webhookKey = requiredEnv("KEEPERHUB_WEBHOOK_API_KEY");
+  const workflowId = requiredEnv("KEEPERHUB_CONFIGURATION_WORKFLOW_ID");
   const client = createSepoliaClient();
   const mcp = createKeeperHubClient(keeperHubKey);
   return {
@@ -112,13 +119,13 @@ async function recoverConfigurationSigner(
   const typedData = configurationTypedData(request);
   const signature = request.signature as Hex;
   switch (typedData.primaryType) {
-    case 'SetBeneficiaries':
+    case "SetBeneficiaries":
       return recoverTypedDataAddress({ ...typedData, signature });
-    case 'SetLivenessConfig':
+    case "SetLivenessConfig":
       return recoverTypedDataAddress({ ...typedData, signature });
-    case 'SetRecoveryConfig':
+    case "SetRecoveryConfig":
       return recoverTypedDataAddress({ ...typedData, signature });
-    case 'SetTrackedTokens':
+    case "SetTrackedTokens":
       return recoverTypedDataAddress({ ...typedData, signature });
   }
 }
@@ -153,16 +160,16 @@ async function resultingStateMatches(
   request: ConfigurationRequest,
 ): Promise<boolean> {
   const payload = request.payload;
-  if ('wallets' in payload)
+  if ("wallets" in payload)
     return beneficiariesMatch(client, request.plan, payload);
-  if ('heartbeatInterval' in payload)
+  if ("heartbeatInterval" in payload)
     return livenessMatches(client, request.plan, payload);
-  if ('recoveryKey' in payload)
+  if ("recoveryKey" in payload)
     return recoveryMatches(client, request.plan, payload);
   const tokens = await client.readContract({
     address: request.plan,
     abi: legacyKeeperAbi,
-    functionName: 'getTrackedTokens',
+    functionName: "getTrackedTokens",
   });
   return (
     tokens.length === payload.tokens.length &&
@@ -173,18 +180,18 @@ async function resultingStateMatches(
 async function beneficiariesMatch(
   client: RoutePublicClient,
   plan: Address,
-  payload: Extract<ConfigurationRequest['payload'], { wallets: Address[] }>,
+  payload: Extract<ConfigurationRequest["payload"], { wallets: Address[] }>,
 ): Promise<boolean> {
   const [beneficiaries, total] = await Promise.all([
     client.readContract({
       address: plan,
       abi: legacyKeeperAbi,
-      functionName: 'getBeneficiaries',
+      functionName: "getBeneficiaries",
     }),
     client.readContract({
       address: plan,
       abi: legacyKeeperAbi,
-      functionName: 'totalShareBps',
+      functionName: "totalShareBps",
     }),
   ]);
   return (
@@ -202,14 +209,14 @@ async function livenessMatches(
   client: RoutePublicClient,
   plan: Address,
   payload: Extract<
-    ConfigurationRequest['payload'],
+    ConfigurationRequest["payload"],
     { heartbeatInterval: number }
   >,
 ): Promise<boolean> {
   const liveness = await client.readContract({
     address: plan,
     abi: legacyKeeperAbi,
-    functionName: 'liveness',
+    functionName: "liveness",
   });
   return (
     Number(liveness[0]) === payload.heartbeatInterval &&
@@ -221,12 +228,12 @@ async function livenessMatches(
 async function recoveryMatches(
   client: RoutePublicClient,
   plan: Address,
-  payload: Extract<ConfigurationRequest['payload'], { recoveryKey: Address }>,
+  payload: Extract<ConfigurationRequest["payload"], { recoveryKey: Address }>,
 ): Promise<boolean> {
   const vault = await client.readContract({
     address: plan,
     abi: legacyKeeperAbi,
-    functionName: 'vault',
+    functionName: "vault",
   });
   return (
     sameAddress(vault[0], payload.safeVault) &&
@@ -240,13 +247,13 @@ async function readExpectedSigner(
   plan: Address,
   action: ConfigurationAction,
 ): Promise<Address> {
-  if (action !== 'recovery') return readPlanOwner(client, plan);
+  if (action !== "recovery") return readPlanOwner(client, plan);
   const [owner, vault] = await Promise.all([
     readPlanOwner(client, plan),
     client.readContract({
       address: plan,
       abi: legacyKeeperAbi,
-      functionName: 'vault',
+      functionName: "vault",
     }),
   ]);
   return vault[2] ? (vault[1] as Address) : owner;

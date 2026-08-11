@@ -1,0 +1,78 @@
+{
+  "generatedAt": "2026-08-11T01:30:00Z",
+  "network": {
+    "name": "Sepolia",
+    "chainId": 11155111,
+    "explorer": "https://sepolia.etherscan.io"
+  },
+  "contracts": {
+    "factory": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576",
+    "owner": "0x05e690aE1a0D9865f3d71E28c3e50d56A1ecbd94",
+    "plan": "0x66B77131A8294c710D1FC1541a8f3134BBbb742F",
+    "token": "0x1c7D4B196Cb0C7b01D743Fbc6116a902379C7238"
+  },
+  "signedTiming": {
+    "heartbeatIntervalSeconds": 1,
+    "inactivityWindowSeconds": 600,
+    "gracePeriodSeconds": 300,
+    "lastHeartbeatTimestamp": 1786405644,
+    "eligibleTimestamp": 1786406544
+  },
+  "beneficiaries": [
+    {
+      "address": "0x2E505F96e8CB455523327DE14B5493D82214e91d",
+      "shareBps": 3000
+    },
+    {
+      "address": "0x96Cb8EB2E349e64bA47b1015890A2fe7584c369B",
+      "shareBps": 7000
+    }
+  ],
+  "inheritance": {
+    "keeperhubExecutionId": "95ivak6zbksfiw8w3yhad",
+    "transactionHash": "0xdc96cb02826a18982f4afc5701f59ef5f9155a5ea184e6e1b5292469ec7eec98",
+    "blockNumber": 11462579,
+    "blockTimestamp": 1786406592,
+    "receiptStatus": 1,
+    "gasUsed": 67223,
+    "expectedEvent": "InheritanceExecuted",
+    "eventEmitter": "0x66B77131A8294c710D1FC1541a8f3134BBbb742F",
+    "postState": {
+      "inheritanceExecuted": true,
+      "factoryPlanMappingMatches": true
+    }
+  },
+  "tokenDistribution": {
+    "symbol": "USDC",
+    "decimals": 6,
+    "keeperhubExecutionId": "76camga0dxbeqrk48n81l",
+    "transactionHash": "0x13d7dfa6523afac9095324171da254712de7ee3e1a29b6d55ec76e5e5a279cdd",
+    "blockNumber": 11462580,
+    "blockTimestamp": 1786406604,
+    "receiptStatus": 1,
+    "gasUsed": 152324,
+    "transfers": [
+      {
+        "beneficiary": "0x2E505F96e8CB455523327DE14B5493D82214e91d",
+        "baseUnits": "324000000",
+        "displayAmount": "324 USDC"
+      },
+      {
+        "beneficiary": "0x96Cb8EB2E349e64bA47b1015890A2fe7584c369B",
+        "baseUnits": "756000000",
+        "displayAmount": "756 USDC"
+      }
+    ],
+    "postState": {
+      "tokenDistributed": true,
+      "ownerBalance": "0"
+    }
+  },
+  "verification": {
+    "keeperhubSettled": true,
+    "receiptsSuccessful": true,
+    "expectedEventsPresent": true,
+    "targetPlanMatches": true,
+    "resultingStateMatches": true
+  }
+}

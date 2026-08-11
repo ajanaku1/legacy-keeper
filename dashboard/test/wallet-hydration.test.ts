@@ -6,6 +6,12 @@ function source(path: string): string {
 }
 
 describe("wallet connection hydration", () => {
+  it("only reconnects on mount when the server restored persisted wallet state", () => {
+    const providers = source("../app/providers.tsx");
+
+    expect(providers).toContain("reconnectOnMount={Boolean(initialState)}");
+  });
+
   it("uses Wagmi reconnecting state instead of a post-render mounted flag", () => {
     const shell = source("../components/shell/ApplicationShell.tsx");
 

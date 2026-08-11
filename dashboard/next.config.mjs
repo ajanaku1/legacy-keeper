@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import nextEnv from '@next/env';
+import { withWorkflow } from 'workflow/next';
 
 const { loadEnvConfig } = nextEnv;
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -17,4 +18,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);

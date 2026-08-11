@@ -227,6 +227,99 @@ verify_live_configuration() {
   echo "PASS  Factory mapping, owner, consumed nonce and retained liveness state"
 }
 
+verify_receipt_metadata() {
+  local receipt="$1" evidence="$2" path="$3" label="$4"
+  local tx block gas
+  tx="$(jq -r "$path.transactionHash" "$evidence")"
+  block="$(jq -r "$path.blockNumber" "$evidence")"
+  gas="$(jq -r "$path.gasUsed" "$evidence")"
+  require_successful_receipt "$receipt" "$label"
+  [ "$(lowercase "$(jq -r '.transactionHash' <<<"$receipt")")" = "$(lowercase "$tx")" ]
+  [ "$(printf '%d' "$(jq -r '.blockNumber' <<<"$receipt")")" = "$block" ]
+  [ "$(printf '%d' "$(jq -r '.gasUsed' <<<"$receipt")")" = "$gas" ]
+}
+
+verify_inheritance_event() {
+  local receipt="$1" plan="$2" expected_timestamp="$3" event_data
+  event_data="$(jq -r --arg address "$(lowercase "$plan")" \
+    --arg event "$(event_signature_topic 'InheritanceExecuted(address,uint64)')" '
+      first(.logs[]? | select(
+        (.address | ascii_downcase) == $address and
+        (.topics[0] | ascii_downcase) == $event
+      ) | .data) // empty
+    ' <<<"$receipt")"
+  [ -n "$event_data" ]
+  [ "$(printf '%d' "$event_data")" = "$expected_timestamp" ]
+}
+
+verify_token_transfer_events() {
+  local receipt="$1" evidence="$2" plan="$3" token="$4" transfer
+  while IFS= read -r transfer; do
+    jq -e --arg address "$(lowercase "$plan")" \
+      --arg event "$(event_signature_topic 'InheritanceTransfer(address,address,uint256)')" \
+      --arg beneficiary "$(address_topic "$(jq -r '.beneficiary' <<<"$transfer")")" \
+      --arg token "$(address_topic "$token")" \
+      --arg amount "0x$(uint256_word "$(jq -r '.baseUnits' <<<"$transfer")")" '
+        any(.logs[]?;
+          (.address | ascii_downcase) == $address and
+          (.topics[0] | ascii_downcase) == $event and
+          (.topics[1] | ascii_downcase) == $beneficiary and
+          (.topics[2] | ascii_downcase) == $token and
+          (.data | ascii_downcase) == $amount)
+      ' <<<"$receipt" >/dev/null
+  done < <(jq -c '.tokenDistribution.transfers[]' "$evidence")
+}
+
+verify_inheritance_state() {
+  local evidence="$1" factory="$2" owner="$3" plan="$4" token="$5"
+  local inherited distributed balance token_call balance_call
+  verify_configuration_identity "$factory" "$owner" "$plan"
+  inherited="$(eth_call_word "$plan" "$(function_selector 'inheritanceExecuted()')")"
+  [ "${inherited: -1}" = "1" ]
+  token_call="$(function_selector 'tokenDistributed(address)')$(address_topic "$token" | cut -c3-)"
+  distributed="$(eth_call_word "$plan" "$token_call")"
+  [ "${distributed: -1}" = "1" ]
+  balance_call="$(function_selector 'balanceOf(address)')$(address_topic "$owner" | cut -c3-)"
+  balance="$(eth_call_word "$token" "$balance_call")"
+  [ "$(printf '%d' "$balance")" = "0" ]
+}
+
+verify_live_inheritance() {
+  if [ "$#" -ne 1 ]; then
+    echo "usage: ./verify.sh live-inheritance EVIDENCE_JSON" >&2
+    return 2
+  fi
+  set -a
+  # shellcheck disable=SC1091
+  source "$PROJECT_ROOT/.env"
+  set +a
+  : "${SEPOLIA_RPC_URL:?SEPOLIA_RPC_URL is required}"
+  verify_inheritance_evidence "$1"
+}
+
+verify_inheritance_evidence() {
+  local evidence="$1" factory owner plan token native_tx token_tx native_receipt token_receipt
+  [ -f "$evidence" ]
+  factory="$(jq -r '.contracts.factory' "$evidence")"
+  owner="$(jq -r '.contracts.owner' "$evidence")"
+  plan="$(jq -r '.contracts.plan' "$evidence")"
+  token="$(jq -r '.contracts.token' "$evidence")"
+  native_tx="$(jq -r '.inheritance.transactionHash' "$evidence")"
+  token_tx="$(jq -r '.tokenDistribution.transactionHash' "$evidence")"
+  [ "$(lowercase "$factory")" = \
+    "$(lowercase "${NEXT_PUBLIC_LEGACY_KEEPER_FACTORY_ADDRESS:?factory address is required}")" ]
+  native_receipt="$(rpc_result eth_getTransactionReceipt "[\"$native_tx\"]")"
+  token_receipt="$(rpc_result eth_getTransactionReceipt "[\"$token_tx\"]")"
+  verify_receipt_metadata "$native_receipt" "$evidence" '.inheritance' "inheritance"
+  verify_receipt_metadata "$token_receipt" "$evidence" '.tokenDistribution' "token inheritance"
+  verify_inheritance_event "$native_receipt" "$plan" \
+    "$(jq -r '.inheritance.blockTimestamp' "$evidence")"
+  verify_token_transfer_events "$token_receipt" "$evidence" "$plan" "$token"
+  verify_inheritance_state "$evidence" "$factory" "$owner" "$plan" "$token"
+  echo "PASS  Inheritance and token receipts, events and retained metadata"
+  echo "PASS  Factory mapping, inheritance state, token state and zero owner balance"
+}
+
 if [ "${1:-}" = "live-sepolia" ]; then
   shift
   verify_live_sepolia "$@"
@@ -239,8 +332,14 @@ if [ "${1:-}" = "live-configuration" ]; then
   exit $?
 fi
 
+if [ "${1:-}" = "live-inheritance" ]; then
+  shift
+  verify_live_inheritance "$@"
+  exit $?
+fi
+
 if [ "$#" -ne 0 ]; then
-  echo "usage: ./verify.sh [live-sepolia ... | live-configuration EVIDENCE_JSON]" >&2
+  echo "usage: ./verify.sh [live-sepolia ... | live-configuration EVIDENCE_JSON | live-inheritance EVIDENCE_JSON]" >&2
   exit 2
 fi
 
