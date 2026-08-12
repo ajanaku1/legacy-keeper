@@ -23,7 +23,7 @@ protocol actions, templates, and paid workflow calls.
 | Direct contract execution | Inheritance, evacuation, and heartbeat writes | **Verified** | Five successful Sepolia receipts with LegacyKeeper events |
 | Gas sponsorship | Gasless owner heartbeat | **Settled** | KeeperHub record reports `sponsored: true`; tx `0x0041106b…` |
 | Smart gas | Avoid underpriced transactions | **Triggered** | Deliberate 0.3× and 0.02× hints were clamped; both landed |
-| Retry and idempotency | Recover an unattended execution | **Verified** | Three failed attempts followed by tx `0x3e8505e2…`; separate per-attempt keys |
+| Retry and idempotency | Recover an unattended execution | **Verified** | Three failed attempts followed by tx `0x3e8505e2…`; unknown outcomes reuse a key, while only confirmed terminal failures rotate it |
 | Native run status / audit | Distinguish attempts and settlement | **Settled** | Execution IDs, status, gas, transaction hashes, and local append-only ledger |
 | Workflow CRUD, validation, export | Reproducible automation graphs | **Verified** | Five enabled workflow IDs, live validation, and definitions round-tripped from KeeperHub |
 | Schedule trigger | Unattended liveness evaluation | **Verified** | Automatic execution `6g847vp4ael4oneykst8f`; stable schedule dispatch key captured |

@@ -116,7 +116,7 @@ factory mapping, and resulting contract state agree.
   identified by a deterministic hook token. It sleeps until the signed
   inactivity-plus-grace deadline, wakes immediately after verified policy or
   heartbeat updates, and rereads canonical Sepolia state before KeeperHub is
-  allowed to write. Failed executions retry with step-scoped idempotency keys;
+  allowed to write. Failed executions retry with outcome-aware idempotency keys;
   an open dashboard and the authenticated GitHub scan remain reconciliation
   paths.
 - **Wallet-scoped evidence.** Activity is durable in PostgreSQL, filtered to the
@@ -174,9 +174,9 @@ KeeperHub is load-bearing for product writes, but its acceptance response is
 not trusted as completion. API keys remain server-only. The app fails closed if
 the execution ID, transaction hash, receipt, event, or state proof is missing.
 The durable watcher claims one deterministic owner-plan hook. Each execution
-step supplies its Workflow step ID as the KeeperHub idempotency scope, so a
-replayed step cannot double-submit while a confirmed failed attempt can retry
-with a fresh key.
+step supplies its Workflow step ID as the KeeperHub idempotency scope. Unknown
+outcomes reuse that scope to prevent a second broadcast; only a confirmed
+terminal failure can advance to a fresh attempt key.
 
 ### Asset custody
 
@@ -437,8 +437,9 @@ separately against Sepolia.
   unsettled, and outside its signed check-in interval.
 - **KeeperHub accepted but UI reports failure:** acceptance is not proof. Inspect
   execution result, receipt, expected event, and resulting state.
-- **Retry repeats a failure:** reuse an idempotency key only while the outcome is
-  unknown. After a confirmed terminal failure, create a new per-attempt key.
+- **Retry repeats a failure:** reuse the idempotency key while the outcome is
+  unknown. Advance to a fresh attempt key only after a confirmed terminal
+  failure.
 - **Telegram appears disconnected after deployment:** use Manage existing link
   once to create the server wallet session; subsequent tabs and deployments use
   the signed HttpOnly cookie until expiry.

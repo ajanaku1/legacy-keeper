@@ -8,7 +8,7 @@ the sponsor-integration evidence behind those reports.
 
 | # | Finding | Severity | Status |
 |---|---------|----------|--------|
-| [07](#07) | A reused `idempotency_key` silently replays a cached failure, making agent recovery impossible | **Critical** | Confirmed live |
+| [07](#07) | A reused `idempotency_key` silently replays a cached failure, making agent recovery impossible | **Critical** | Accepted upstream; execution change queued behind #2020 |
 | [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises | **High** | Fixed upstream; live retest passed |
 | [06](#06) | `status: "completed"` means settled, not successful | **High** | Confirmed, cost us a real bug |
 | [09](#09) | Private routing is advertised but has no API surface and no observability | **High** | Confirmed |
@@ -67,7 +67,9 @@ exercise our retry path.
 <a id="07"></a>
 ## 07 · A reused `idempotency_key` silently replays a cached failure
 
-**Status:** confirmed on a live Sepolia contract. Highest-severity finding.
+**Status:** confirmed and accepted upstream. Replay visibility and retry guidance
+have shipped; the execution change is queued behind
+[KeeperHub/keeperhub#2020](https://github.com/KeeperHub/keeperhub/issues/2020).
 
 **Filed upstream:** [KeeperHub/keeperhub#1840](https://github.com/KeeperHub/keeperhub/issues/1840)
 
@@ -91,19 +93,28 @@ agent concluded the estate could not be distributed when in fact it could.
 
 **Why this is dangerous:** it fails in the direction of inaction on an
 irreversible, time-critical action, and it is invisible. The agent gets a
-plausible, contract-shaped error message instead of a cache-hit signal.
-Nothing in the response distinguishes a fresh revert from a replayed one.
+plausible, contract-shaped error message instead of a cache-hit signal. At the
+time, nothing in the response distinguished a fresh revert from a replayed one.
 
-**Fix we adopted:** scope the key per *attempt*
-(`${executionKey}-a${attempt}`). Transport-level duplicates of a single
-attempt are still deduplicated, and the contract's own executed flags remain
-the real guard against double distribution. That is where the guarantee
-belongs anyway.
+**Client policy we adopted:** reuse the same key while the outcome is unknown.
+Timeouts, dropped connections, 5xx responses, and
+`idempotency_in_progress` do not rotate it. Only a confirmed terminal failure
+increments `idempotencyAttempt`, producing a fresh key for the next request.
+The key is therefore `${executionKey}-a${idempotencyAttempt}`, not one new key
+for every loop attempt.
 
-**Suggested fix upstream:** document that the key caches outcomes including
-failures, and either surface a `cached: true` field on replayed responses or
-scope caching to successful executions only. As written, the parameter's name
-suggests safety while the behaviour introduces a liveness bug.
+**Upstream outcome:** merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884)
+adds `idempotentReplay: true` to replayed object responses. Merged
+[PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) marks
+`idempotency_in_progress` as retryable with the same key and documents when to
+reuse or rotate.
+
+The remaining change is deliberately narrower than "cache successes only."
+KeeperHub will release the key when the outcome is definite and nothing
+landed, but retain it when the broadcast outcome is unknown. That work follows
+#2020, which must first stop classifying an unreadable receipt as a definite
+failure. Once deployed, the original preflight-revert repro should recover by
+reusing the same key after the contract condition becomes true.
 
 ---
 

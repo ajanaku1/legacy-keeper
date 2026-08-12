@@ -17,13 +17,15 @@ KeeperHub executed the required transactions and recovered from real failures.
 The difficult part was knowing which inputs the tools accepted, whether a retry
 sent a new transaction, and what evidence licensed the agent to report success.
 
-The investigation produced two upstream issues and influenced two merged fixes:
+The investigation produced two upstream issues. Three related fixes have
+merged, and the idempotency report is now the acceptance case for another
+platform change:
 
 | Field finding | Upstream result | Builder impact |
 |---|---|---|
 | Natural JSON values were rejected by `execute_contract_call` | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) led to merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848); the [hosted v1.2.0 retest passed](keeperhub-natural-encoding-evidence.json) | Numeric chain IDs, arrays, and numeric gas values are now accepted by the MCP execute tools |
-| A reused idempotency key silently replayed a cached revert | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840) informed merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884) | Replayed responses now carry `idempotentReplay: true` instead of looking like fresh executions |
-| Retry disposition remained ambiguous after a timeout | Open [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) builds on the same failure analysis | The proposed response tells an agent when the same key must be reused |
+| A reused idempotency key silently replayed a cached revert | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840) informed merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884); the issue is now accepted, with the execution change queued behind [#2020](https://github.com/KeeperHub/keeperhub/issues/2020) | Replays are visible now; the accepted follow-up will release a key after a definite failure while retaining it for an unknown outcome |
+| Retry disposition remained ambiguous after a timeout | Merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) builds on the same failure analysis | In-progress responses tell the agent to retry with the same key, and the reuse-versus-rotate rule is documented |
 
 The original evidence remains in the chronological
 [friction log](friction-log.md). This report is the shorter onboarding path,
@@ -93,8 +95,17 @@ The safe policy is conditional:
    attempt.
 4. Keep contract-level idempotency for irreversible actions.
 
-Merged PR #1884 makes replay visible. PR #1922 addresses the remaining
-same-key versus new-key decision.
+Merged PR #1884 makes replay visible. Merged PR #1922 marks in-progress
+responses as retryable with the same key and documents the reuse-versus-rotate
+decision. Issue #1840 is now accepted for the remaining execution change:
+KeeperHub will release a key after a definite failure and hold it when the
+broadcast outcome is unknown. That change follows #2020 so an unreadable
+receipt cannot be mistaken for a safe-to-retry failure.
+
+Until that is deployed, LegacyKeeper increments its idempotency suffix only
+after a confirmed terminal failure. It keeps the same suffix for timeouts,
+dropped connections, 5xx responses, and `idempotency_in_progress`. Once the
+platform change lands, a preflight revert can be retried with the same key.
 
 **Onboarding lesson:** an idempotency key is not a generic retry identifier. Its
 lifetime and replay semantics are part of the execution contract.
@@ -248,7 +259,7 @@ owner, token, or spender it needed checked.
 | Claim | Evidence |
 |---|---|
 | Natural MCP argument mismatch | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841), merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848), and [passing hosted MCP retest](keeperhub-natural-encoding-evidence.json) |
-| Cached-failure retry failure | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), open [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) |
+| Cached-failure retry failure | Accepted [issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922), and prerequisite [issue #2020](https://github.com/KeeperHub/keeperhub/issues/2020) |
 | Private-routing evidence boundary | [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983) |
 | Recovered autonomous inheritance | [Sepolia transaction `0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) |
 | Sponsored transaction | [Sepolia transaction `0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598) |
