@@ -25,6 +25,7 @@ import {
 import {
   createKeeperHubClient,
   createSepoliaClient,
+  createSepoliaLogsClient,
   readRegisteredPlanAcrossFactories,
   requiredEnv,
   requiredFactories,
@@ -41,6 +42,8 @@ const INHERITANCE_EVENTS = parseAbi([
 const TOKEN_INHERITANCE_EVENTS = parseAbi([
   "event InheritanceTransfer(address indexed beneficiary, address indexed token, uint256 amount)",
 ]);
+const EVENT_QUERY_BLOCK_RANGE = 10n;
+const EVENT_QUERY_CONCURRENCY = 500;
 
 export interface MonitorDependencyOptions {
   idempotencyScope?: string;
@@ -54,10 +57,11 @@ export async function createInheritanceMonitorDependencies(
   const factories = requiredFactories();
   const deployments = factoryDeployments(factories);
   const client = createSepoliaClient();
+  const logsClient = createSepoliaLogsClient();
   const keeperHub = createKeeperHubClient(requiredEnv("KEEPERHUB_API_KEY"));
   await keeperHub.connect();
   return {
-    listRegisteredPlans: () => listAllRegisteredPlans(client, deployments),
+    listRegisteredPlans: () => listAllRegisteredPlans(logsClient, deployments),
     readRegisteredPlan: (owner) =>
       readRegisteredPlanAcrossFactories(client, factories, owner),
     readPlanState: (plan) => readPlanState(client, plan),
@@ -79,10 +83,11 @@ export async function createTokenInheritanceMonitorDependencies(
   const factories = requiredFactories();
   const deployments = factoryDeployments(factories);
   const client = createSepoliaClient();
+  const logsClient = createSepoliaLogsClient();
   const keeperHub = createKeeperHubClient(requiredEnv("KEEPERHUB_API_KEY"));
   await keeperHub.connect();
   return {
-    listRegisteredPlans: () => listAllRegisteredPlans(client, deployments),
+    listRegisteredPlans: () => listAllRegisteredPlans(logsClient, deployments),
     readRegisteredPlan: (owner) =>
       readRegisteredPlanAcrossFactories(client, factories, owner),
     readPlanState: (plan) => readTokenPlanState(client, plan),
@@ -135,19 +140,68 @@ async function listRegisteredPlans(
   factory: Address,
   deploymentBlock: bigint,
 ): Promise<RegisteredPlan[]> {
-  const logs = await client.getContractEvents({
-    address: factory,
-    abi: FACTORY_EVENTS,
-    eventName: "PlanCreated",
-    fromBlock: deploymentBlock,
-    toBlock: "latest",
-  });
+  const logs = await getPlanCreatedLogs(client, factory, deploymentBlock);
   return logs.flatMap((log) => {
     const { owner, plan } = log.args;
     return owner && plan && isAddress(owner) && isAddress(plan)
       ? [{ owner, plan }]
       : [];
   });
+}
+
+async function getPlanCreatedLogs(
+  client: RoutePublicClient,
+  factory: Address,
+  deploymentBlock: bigint,
+) {
+  const latestBlock = await client.getBlockNumber();
+  const ranges = blockRanges(deploymentBlock, latestBlock);
+  const logs = [];
+  for (
+    let offset = 0;
+    offset < ranges.length;
+    offset += EVENT_QUERY_CONCURRENCY
+  ) {
+    const requests = ranges.slice(offset, offset + EVENT_QUERY_CONCURRENCY);
+    const batches = await Promise.all(
+      requests.map(({ fromBlock, toBlock }) =>
+        client.getContractEvents({
+          address: factory,
+          abi: FACTORY_EVENTS,
+          eventName: "PlanCreated",
+          fromBlock,
+          toBlock,
+        }),
+      ),
+    );
+    logs.push(...batches.flat());
+  }
+  return logs;
+}
+
+function blockRanges(
+  deploymentBlock: bigint,
+  latestBlock: bigint,
+): Array<{ fromBlock: bigint; toBlock: bigint }> {
+  const ranges = [];
+  for (
+    let fromBlock = deploymentBlock;
+    fromBlock <= latestBlock;
+    fromBlock += EVENT_QUERY_BLOCK_RANGE
+  ) {
+    ranges.push({
+      fromBlock,
+      toBlock: minBlock(
+        fromBlock + EVENT_QUERY_BLOCK_RANGE - 1n,
+        latestBlock,
+      ),
+    });
+  }
+  return ranges;
+}
+
+function minBlock(left: bigint, right: bigint): bigint {
+  return left < right ? left : right;
 }
 
 export async function readPlanState(

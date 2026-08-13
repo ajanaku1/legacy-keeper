@@ -84,6 +84,16 @@ describe("scheduled inheritance entry point", () => {
     expect(workflow).toContain("?authOnly=1");
   });
 
+  it("does not expose provider error details to the public workflow log", () => {
+    const route = readFileSync(
+      new URL("../app/api/monitor/inheritance/route.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(route).not.toContain("error.message");
+    expect(route).toContain('{ error: "Monitor failed" }');
+  });
+
   it("ships an immediate registry-validated trigger for an eligible open dashboard", () => {
     const route = readFileSync(
       new URL("../app/api/inheritance/route.ts", import.meta.url),

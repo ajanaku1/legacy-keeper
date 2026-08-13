@@ -20,6 +20,15 @@ export function createSepoliaClient() {
   });
 }
 
+export function createSepoliaLogsClient() {
+  return createPublicClient({
+    chain: sepolia,
+    transport: http(requiredRpcUrl(), {
+      batch: { batchSize: 50 },
+    }),
+  });
+}
+
 export function createKeeperHubClient(apiKey: string): McpClient {
   return new McpClient({
     url: process.env.KEEPERHUB_MCP_URL ?? 'https://app.keeperhub.com/mcp',
