@@ -6,24 +6,25 @@ the sponsor-integration evidence behind those reports.
 
 ## Index, ranked by what it costs a new builder
 
-| # | Finding | Severity | Status |
-|---|---------|----------|--------|
+| #         | Finding                                                                                        | Severity     | Status                                                  |
+| --------- | ---------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------- |
 | [07](#07) | A reused `idempotency_key` silently replays a cached failure, making agent recovery impossible | **Critical** | Accepted upstream; execution change queued behind #2020 |
-| [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises | **High** | Fixed upstream; live retest passed |
-| [06](#06) | `status: "completed"` means settled, not successful | **High** | Confirmed, cost us a real bug |
-| [09](#09) | Private routing is advertised but has no API surface and no observability | **High** | Confirmed |
-| [02](#02) | The workflow schema exists but is undiscoverable from the docs | Medium | Corrected |
-| [08](#08) | `validate_workflow` cannot validate a definition before it exists | Medium | Confirmed |
-| [04](#04) | Handshake ordering, header-borne session id, SSE framing | Medium | Confirmed |
-| [01](#01) | Gas sponsorship scope reads as Base/Tempo-only but works on Sepolia | Low | Resolved |
-| [05](#05) | `gas_limit_multiplier` is clamped, so you cannot test your own failure handling | Low | Positive finding |
-| [10](#10) | Marketplace listings take no inputs, so a paid check cannot target your own contract | Medium | Confirmed by paying |
+| [03](#03) | `execute_contract_call` scalar types disagree with the schema it advertises                    | **High**     | Fixed upstream; live retest passed                      |
+| [06](#06) | `status: "completed"` means settled, not successful                                            | **High**     | Confirmed, cost us a real bug                           |
+| [09](#09) | Private-routing capability, request, and proof were conflated                                  | **High**     | Clarified in merged entrant-authored PR #1983           |
+| [02](#02) | The workflow schema exists but is undiscoverable from the docs                                 | Medium       | Corrected                                               |
+| [08](#08) | `validate_workflow` cannot validate a definition before it exists                              | Medium       | Confirmed                                               |
+| [04](#04) | Handshake ordering, header-borne session id, SSE framing                                       | Medium       | Confirmed                                               |
+| [01](#01) | Gas sponsorship scope reads as Base/Tempo-only but works on Sepolia                            | Low          | Resolved                                                |
+| [05](#05) | `gas_limit_multiplier` is clamped, so you cannot test your own failure handling                | Low          | Positive finding                                        |
+| [10](#10) | Marketplace listings take no inputs, so a paid check cannot target your own contract           | Medium       | Confirmed by paying                                     |
 
 Entries below are in the order they were discovered, not ranked order.
 
 ---
 
 <a id="01"></a>
+
 ## 01 · Where gas sponsorship applies is ambiguous
 
 **Status:** RESOLVED empirically. Sponsorship works on Sepolia.
@@ -46,6 +47,7 @@ networks including Sepolia.
 ---
 
 <a id="05"></a>
+
 ## 05 · `gas_limit_multiplier` is clamped, so you cannot underprice into a stuck tx
 
 **Status:** confirmed. Positive finding, worth documenting as a feature.
@@ -65,6 +67,7 @@ exercise our retry path.
 ---
 
 <a id="07"></a>
+
 ## 07 · A reused `idempotency_key` silently replays a cached failure
 
 **Status:** confirmed and accepted upstream. Replay visibility and retry guidance
@@ -119,6 +122,7 @@ reusing the same key after the contract condition becomes true.
 ---
 
 <a id="06"></a>
+
 ## 06 · `status: "completed"` does not mean the call succeeded
 
 **Status:** confirmed. Cost us a real bug.
@@ -130,7 +134,7 @@ is wrong. A poller that omits it from its terminal set, as ours initially did,
 waits out its entire timeout on a transaction that already landed, then reports
 failure for a success.
 
-Reporting a false *failure* is as damaging as a false success: an agent that
+Reporting a false _failure_ is as damaging as a false success: an agent that
 believes an irreversible action failed may try to compensate for something that
 already happened.
 
@@ -142,6 +146,7 @@ Adjacent to upstream [#1784](https://github.com/KeeperHub/keeperhub/issues/1784)
 ---
 
 <a id="03"></a>
+
 ## 03 · `execute_contract_call` types disagree with the schema it advertises
 
 **Status:** FIXED UPSTREAM; LIVE RETEST PASSED on 2026-08-11.
@@ -186,7 +191,7 @@ MCP error -32602: Input validation error:
 ```
 
 `gas_limit_multiplier` was affected too. Every scalar had to be a **string**,
-and `function_args` had to be a JSON array *encoded as a string*:
+and `function_args` had to be a JSON array _encoded as a string_:
 
 ```jsonc
 // rejected
@@ -209,6 +214,7 @@ string encoding with a complete example.
 ---
 
 <a id="04"></a>
+
 ## 04 · The MCP handshake order is strict and easy to get wrong
 
 **Status:** confirmed.
@@ -233,6 +239,7 @@ that responses can be SSE-framed.
 ---
 
 <a id="02"></a>
+
 ## 02 · The workflow schema exists but is undiscoverable from the docs
 
 **Status:** CORRECTED. My earlier claim that no schema existed was wrong.
@@ -260,6 +267,7 @@ difference between "workflows are a UI feature" and "workflows are code".
 ---
 
 <a id="08"></a>
+
 ## 08 · `validate_workflow` cannot validate a workflow that does not exist yet
 
 **Status:** confirmed.
@@ -280,17 +288,22 @@ authoring their first workflow in code, who will get it wrong several times.
 ---
 
 <a id="09"></a>
-## 09 · Private routing is advertised but has no API surface and no observability
 
-**Status:** confirmed by exhaustive schema search.
+## 09 · Private routing capability, request, and proof were conflated
+
+**Status:** clarified by a later source audit and merged upstream documentation
+[PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983).
 
 The product pages promise MEV protection: KeeperHub "does not publish
 intent-revealing transactions to public mempools when private routes are
 available", with "private routing on supported chains". The hackathon brief
-lists *Private routing. MEV protection via non-public submission paths* as a
+lists _Private routing. MEV protection via non-public submission paths_ as a
 headline capability.
 
-There is no way to request it, and no way to tell whether it happened.
+The MCP direct-execution tools provide no way to request it, and no direct
+execution result proves that it happened. A later source audit found that
+workflow write actions can request it with `usePrivateMempool: true`; this
+workflow-only surface was absent from the action-schema result inspected below.
 
 **Reproduction.** Search every live schema for
 `private|mev|flashbot|protect|bundle|relay|mempool`:
@@ -306,22 +319,20 @@ sponsorship but not routing:
 
 ```jsonc
 {
-  "sponsored": true,        // observable and provable
-  "retryCount": 0,          // observable
+  "sponsored": true, // observable and provable
+  "retryCount": 0, // observable
   // no route / private / mempool field anywhere
 }
 ```
 
-So a builder can demonstrate gas sponsorship with evidence, and cannot
-demonstrate private routing at all.
+So a builder can demonstrate gas sponsorship with evidence, but cannot prove
+the submission route of an individual transaction from the execution result.
 
 **Why it matters here.** LegacyKeeper's emergency evacuation is precisely the
 transaction that must not be visible before inclusion: it announces "these
-funds are moving, race me". Private routing is the difference between an
-evacuation and a front-run evacuation. We built an explicit route policy that
-requests it for evacuation and sponsorship for liveness, and we cannot verify
-the request was honoured. Our UI therefore says "private routing requested",
-never "used." That is the only honest wording available.
+funds are moving, race me". LegacyKeeper therefore does not claim private
+routing was used. Capability, workflow request, strict-versus-fallback behavior,
+and observed execution proof are recorded as separate facts.
 
 Sepolia may have no private route because private relays are mainnet
 infrastructure. That would be a reasonable answer, but nothing in the API or
@@ -337,12 +348,14 @@ to determine availability for their chain.
 3. Allow the route to be requested explicitly, and report when a request could
    not be honoured instead of silently falling back to the public mempool.
 
-**Open question for the team:** is private routing applied automatically on
-eligible chains, is it an organisation-level setting, and is Sepolia eligible?
+**Upstream result:** PR #1983 documents the capability flag, workflow opt-in,
+strict mode, public fallback, the sponsorship tradeoff, and the lack of
+per-transaction route evidence. Direct execution still exposes no route input.
 
 ---
 
 <a id="10"></a>
+
 ## 10 · Marketplace listings take no inputs, so a paid check cannot be pointed at your own contract
 
 **Status:** confirmed by paying for one.

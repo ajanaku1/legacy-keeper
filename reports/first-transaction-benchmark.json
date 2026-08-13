@@ -1,0 +1,26 @@
+{
+  "checkedAt": "2026-08-13T11:18:48+01:00",
+  "command": "npm run first-tx",
+  "clockBoundary": "before MCP handshake through independent onchain verification",
+  "requiredEnvironment": ["KEEPERHUB_API_KEY"],
+  "proof": "KEEPERHUB_FIRST_TRANSACTION_VERIFIED",
+  "keeperHubExecutionId": "xcdvqyd7e552hhlnhd0vf",
+  "transactionHash": "0x2f39e73bb20e3cea728da830708e2a2a9f98e590fb0638307ec5afee8025bbca",
+  "sponsored": true,
+  "elapsedMs": 74289,
+  "elapsedSeconds": 74.3,
+  "planAddress": "0xC9f15193F1576c5d0A14eA58Cb3913CB1DF8C87B",
+  "blockNumber": 11479842,
+  "network": "Sepolia",
+  "owner": "0xb7c71afAff6aF496221BE50c1A05c9C60419D050",
+  "factoryAddress": "0xf434788C775a36736CF3Ce0D2e0368E22BF9c576",
+  "verification": [
+    "successful receipt",
+    "PlanCreated event for the generated owner",
+    "factory planOf mapping matches the event",
+    "created plan has deployed bytecode",
+    "created plan owner matches the signer",
+    "created plan is initialized"
+  ],
+  "explorer": "https://sepolia.etherscan.io/tx/0x2f39e73bb20e3cea728da830708e2a2a9f98e590fb0638307ec5afee8025bbca"
+}

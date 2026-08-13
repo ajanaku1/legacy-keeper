@@ -17,15 +17,16 @@ KeeperHub executed the required transactions and recovered from real failures.
 The difficult part was knowing which inputs the tools accepted, whether a retry
 sent a new transaction, and what evidence licensed the agent to report success.
 
-The investigation produced two upstream issues. Three related fixes have
-merged, and the idempotency report is now the acceptance case for another
-platform change:
+The entrant authored two upstream issues and one merged documentation PR.
+Independent contributors shipped three related fixes that explicitly cite or
+build on those reports, and the idempotency reproduction is now the acceptance
+case for another platform change:
 
-| Field finding | Upstream result | Builder impact |
-|---|---|---|
-| Natural JSON values were rejected by `execute_contract_call` | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841) led to merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848); the [hosted v1.2.0 retest passed](keeperhub-natural-encoding-evidence.json) | Numeric chain IDs, arrays, and numeric gas values are now accepted by the MCP execute tools |
-| A reused idempotency key silently replayed a cached revert | [Issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840) informed merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884); the issue is now accepted, with the execution change queued behind [#2020](https://github.com/KeeperHub/keeperhub/issues/2020) | Replays are visible now; the accepted follow-up will release a key after a definite failure while retaining it for an unknown outcome |
-| Retry disposition remained ambiguous after a timeout | Merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) builds on the same failure analysis | In-progress responses tell the agent to retry with the same key, and the reuse-versus-rotate rule is documented |
+| Field finding                                                | Upstream result                                                                                                                                                                                                                                                                                        | Builder impact                                                                                                                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Natural JSON values were rejected by `execute_contract_call` | The entrant filed [issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841). Pico authored merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848), which explicitly credits the report; the entrant's [hosted v1.2.0 retest passed](keeperhub-natural-encoding-evidence.json)     | Numeric chain IDs, arrays, and numeric gas values are now accepted by the MCP execute tools                                                                                    |
+| A reused idempotency key silently replayed a cached revert   | The entrant filed [issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840). Other contributors implemented replay visibility in merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884) and retry guidance in merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922) | Replays are visible; in-progress responses say to retain the key; the accepted follow-up will release a key after a definite failure while retaining it for an unknown outcome |
+| Private-routing claims exceeded available evidence           | The entrant authored merged [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983)                                                                                                                                                                                                               | KeeperHub now distinguishes chain capability, workflow request, fallback, sponsorship, and proof of the route used                                                             |
 
 The original evidence remains in the chronological
 [friction log](friction-log.md). This report is the shorter onboarding path,
@@ -152,8 +153,10 @@ The current workaround is:
 4. Update until valid.
 5. Enable only after review.
 
-Open [PR #1949](https://github.com/KeeperHub/keeperhub/pull/1949) corrects the
-documentation that implied candidate validation already existed.
+An independent contributor attempted to correct that wording in
+[PR #1949](https://github.com/KeeperHub/keeperhub/pull/1949), but the PR closed
+without merging. Candidate-graph validation therefore remains a proposed
+platform improvement, not a shipped fix or a contribution claimed by this entry.
 
 **Onboarding lesson:** if pre-create validation is unavailable, the tool and
 docs should make the disabled-create workflow explicit.
@@ -176,14 +179,25 @@ The public Chains API described the capability flag as routing transactions by
 default. That wording made support, selection, and proof look like one thing.
 They are three different claims.
 
-LegacyKeeper therefore says private routing was **requested**, never that it was
-used. Upstream [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983)
-corrects the capability wording and records those evidence boundaries.
+LegacyKeeper therefore claims neither that private routing was **requested** nor
+that it was **used** without corresponding evidence. Upstream
+[PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983) corrects the
+capability wording and records those evidence boundaries.
 
 **Onboarding lesson:** a security feature needs separate fields for
 availability, request, fallback, and observed result.
 
 ## Correct first-transaction path
+
+For a runnable version of this path, LegacyKeeper now includes a
+[one-key quickstart](../starter/README.md). After `npm ci`, it needs only
+`KEEPERHUB_API_KEY`; it reuses the verified public Sepolia factory and avoids
+contract deployment, workflow publication, webhooks, a funded wallet,
+PostgreSQL, and Telegram. The command prints its handshake-to-proof duration.
+The retained 2026-08-13 run completed that boundary in **74.3 seconds** through
+sponsored [Sepolia transaction `0x2f39…bbca`](https://sepolia.etherscan.io/tx/0x2f39e73bb20e3cea728da830708e2a2a9f98e590fb0638307ec5afee8025bbca);
+the sanitized [benchmark evidence](first-transaction-benchmark.json) records the
+receipt, event, registry, bytecode, owner, and initialization checks.
 
 This is the shortest sequence that matched the deployed system and produced
 independently verified evidence:
@@ -227,7 +241,7 @@ now cover more of this route than they did at the start of the hackathon.
 - Chain capability is discoverable before construction.
 - The caller can request private routing explicitly.
 - Strict versus public-fallback behavior is explicit.
-- The execution record reports the route actually used.
+- The execution record reports the observed route.
 - Sponsorship and private routing are identified as mutually exclusive where
   that remains the implementation constraint.
 
@@ -256,23 +270,24 @@ owner, token, or spender it needed checked.
 
 ## Evidence inventory
 
-| Claim | Evidence |
-|---|---|
-| Natural MCP argument mismatch | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841), merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848), and [passing hosted MCP retest](keeperhub-natural-encoding-evidence.json) |
-| Cached-failure retry failure | Accepted [issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922), and prerequisite [issue #2020](https://github.com/KeeperHub/keeperhub/issues/2020) |
-| Private-routing evidence boundary | [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983) |
-| Recovered autonomous inheritance | [Sepolia transaction `0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc) |
-| Sponsored transaction | [Sepolia transaction `0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598) |
-| Workflow and platform coverage | [KeeperHub coverage matrix](keeperhub-coverage.md) |
-| Full chronological record | [Friction log](friction-log.md) |
-| Fail-closed implementation | [`agent/executor/keeperhub.ts`](../agent/executor/keeperhub.ts) and its [integrity tests](../test/agent/executor-integrity.test.ts) |
+| Claim                                          | Evidence                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Entrant-authored natural-encoding report       | [Issue #1841](https://github.com/KeeperHub/keeperhub/issues/1841), Pico's merged [PR #1848](https://github.com/KeeperHub/keeperhub/pull/1848), and the entrant's [passing hosted retest](keeperhub-natural-encoding-evidence.json)                                                                                                                     |
+| Entrant-authored cached-failure report         | Accepted [issue #1840](https://github.com/KeeperHub/keeperhub/issues/1840), independently authored merged [PR #1884](https://github.com/KeeperHub/keeperhub/pull/1884), independently authored merged [PR #1922](https://github.com/KeeperHub/keeperhub/pull/1922), and prerequisite [issue #2020](https://github.com/KeeperHub/keeperhub/issues/2020) |
+| Entrant-authored private-routing documentation | Merged [PR #1983](https://github.com/KeeperHub/keeperhub/pull/1983)                                                                                                                                                                                                                                                                                    |
+| Recovered autonomous inheritance               | [Sepolia transaction `0x3e8505e2`](https://sepolia.etherscan.io/tx/0x3e8505e2f1bc59d4eb16597dd8dca5a8cc1d1a0525170c8cd55aa60067c351bc)                                                                                                                                                                                                                 |
+| Sponsored transaction                          | [Sepolia transaction `0x0041106b`](https://sepolia.etherscan.io/tx/0x0041106b3d3f246c57efc27d200a215a07607c4f644c36173826f573da38a598)                                                                                                                                                                                                                 |
+| Workflow and platform coverage                 | [KeeperHub coverage matrix](keeperhub-coverage.md)                                                                                                                                                                                                                                                                                                     |
+| Full chronological record                      | [Friction log](friction-log.md)                                                                                                                                                                                                                                                                                                                        |
+| Fail-closed implementation                     | [`agent/executor/keeperhub.ts`](../agent/executor/keeperhub.ts) and its [integrity tests](../test/agent/executor-integrity.test.ts)                                                                                                                                                                                                                    |
 
 ## Scope and limitations
 
 - Sepolia proves integration and execution behavior, not mainnet private relay
   inclusion.
-- KeeperHub platform behavior changed during the hackathon. This report labels
-  merged fixes and open work separately.
+- KeeperHub platform behavior changed during the hackathon. Statuses above were
+  rechecked on 2026-08-13; merged, accepted-but-pending, and closed-unmerged work
+  are labeled separately.
 - A successful KeeperHub payment proves the payment rail, not that the purchased
   workflow accepted useful user-specific inputs.
 - No claim of private routing is made without route evidence.

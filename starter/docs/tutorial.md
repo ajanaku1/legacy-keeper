@@ -5,6 +5,11 @@ Sepolia. It does not treat KeeperHub webhook acceptance as success: every write
 must settle, have a successful receipt, emit the expected event, and change the
 expected contract state.
 
+If the goal is only to reach a first verified KeeperHub transaction, use the
+[one-key quickstart](../README.md). It requires only `KEEPERHUB_API_KEY` after
+installation and avoids the factory deployment, workflow publication,
+PostgreSQL, dashboard, and Telegram steps below.
+
 ## Prerequisites
 
 - Node.js 20 or 22 and npm
@@ -30,14 +35,14 @@ cp .env.example .env
 
 Required for the wallet-scoped application:
 
-| Variable | Purpose |
-|---|---|
-| `KEEPERHUB_API_KEY` | Workflow creation, validation, export, and inspection |
-| `KEEPERHUB_WEBHOOK_API_KEY` | Server-to-workflow execution |
-| `SEPOLIA_RPC_URL` | Contract reads and independent receipt/state verification |
-| `DEPLOYER_PRIVATE_KEY` | Testnet factory deployment only |
-| `DATABASE_URL` | Owner activity and Telegram state |
-| `NEXT_PUBLIC_APP_URL` | Browser and Telegram callback origin |
+| Variable                    | Purpose                                                   |
+| --------------------------- | --------------------------------------------------------- |
+| `KEEPERHUB_API_KEY`         | Workflow creation, validation, export, and inspection     |
+| `KEEPERHUB_WEBHOOK_API_KEY` | Server-to-workflow execution                              |
+| `SEPOLIA_RPC_URL`           | Contract reads and independent receipt/state verification |
+| `DEPLOYER_PRIVATE_KEY`      | Testnet factory deployment only                           |
+| `DATABASE_URL`              | Owner activity and Telegram state                         |
+| `NEXT_PUBLIC_APP_URL`       | Browser and Telegram callback origin                      |
 
 The deploy steps below fill the factory and workflow IDs. `TELEGRAM_CHAT_ID` is
 not part of production wallet-scoped delivery; it belongs only to the optional

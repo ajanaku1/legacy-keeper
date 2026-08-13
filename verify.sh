@@ -146,6 +146,42 @@ verify_live_sepolia() {
   echo "PASS  Sepolia heartbeat receipt, event and lastHeartbeat=$5"
 }
 
+verify_live_first_transaction() {
+  if [ "$#" -ne 1 ]; then
+    echo "usage: ./verify.sh live-first-transaction EVIDENCE_JSON" >&2
+    return 2
+  fi
+  if [ -f "$PROJECT_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$PROJECT_ROOT/.env"
+    set +a
+  fi
+  case "${SEPOLIA_RPC_URL:-}" in
+    ""|*your_key_here*) SEPOLIA_RPC_URL="https://ethereum-sepolia-rpc.publicnode.com" ;;
+  esac
+
+  local evidence="$1" factory owner plan tx expected_block receipt actual_block
+  [ -f "$evidence" ]
+  factory="$(jq -r '.factoryAddress' "$evidence")"
+  owner="$(jq -r '.owner' "$evidence")"
+  plan="$(jq -r '.planAddress' "$evidence")"
+  tx="$(jq -r '.transactionHash' "$evidence")"
+  expected_block="$(jq -r '.blockNumber' "$evidence")"
+  receipt="$(rpc_result eth_getTransactionReceipt "[\"$tx\"]")"
+
+  require_successful_receipt "$receipt" "first transaction"
+  actual_block="$(printf '%d' "$(jq -r '.blockNumber' <<<"$receipt")")"
+  [ "$actual_block" = "$expected_block" ]
+  verify_plan_created_log "$receipt" "$factory" \
+    "$(address_topic "$owner")" "$(address_topic "$plan")"
+  verify_deployed_plan "$factory" "$(address_topic "$owner")" \
+    "$(lowercase "${owner#0x}")" "$plan" "$(lowercase "${plan#0x}")"
+
+  echo "PASS  First transaction receipt, block and PlanCreated event"
+  echo "PASS  Factory mapping, plan bytecode, owner and initialization"
+}
+
 verify_configuration_event() {
   local receipt="$1" plan="$2" event_data expected_event_data
   expected_event_data="$(abi_string_data liveness_config)"
@@ -326,6 +362,12 @@ if [ "${1:-}" = "live-sepolia" ]; then
   exit $?
 fi
 
+if [ "${1:-}" = "live-first-transaction" ]; then
+  shift
+  verify_live_first_transaction "$@"
+  exit $?
+fi
+
 if [ "${1:-}" = "live-configuration" ]; then
   shift
   verify_live_configuration "$@"
@@ -339,7 +381,7 @@ if [ "${1:-}" = "live-inheritance" ]; then
 fi
 
 if [ "$#" -ne 0 ]; then
-  echo "usage: ./verify.sh [live-sepolia ... | live-configuration EVIDENCE_JSON | live-inheritance EVIDENCE_JSON]" >&2
+  echo "usage: ./verify.sh [live-sepolia ... | live-first-transaction EVIDENCE_JSON | live-configuration EVIDENCE_JSON | live-inheritance EVIDENCE_JSON]" >&2
   exit 2
 fi
 

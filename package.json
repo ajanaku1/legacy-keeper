@@ -13,6 +13,8 @@
     "format": "prettier --write '**/*.ts' '**/*.sol'",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
     "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "first-tx": "tsx starter/first-transaction.ts",
+    "first-tx:dry-run": "tsx starter/first-transaction.ts --dry-run",
     "agent": "tsx agent/run.ts",
     "agent:bot": "tsx agent/run.ts --with-bot",
     "evidence:keeperhub-1841": "tsx scripts/workflows/retest-execute-natural-encoding.ts --write",

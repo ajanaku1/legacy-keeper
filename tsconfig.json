@@ -13,6 +13,13 @@
     "resolveJsonModule": true,
     "sourceMap": true
   },
-  "include": ["agent/**/*.ts", "bot/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "hardhat.config.ts"],
+  "include": [
+    "agent/**/*.ts",
+    "bot/**/*.ts",
+    "scripts/**/*.ts",
+    "starter/**/*.ts",
+    "test/**/*.ts",
+    "hardhat.config.ts"
+  ],
   "exclude": ["node_modules", "dist", "dashboard"]
 }

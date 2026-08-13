@@ -4,7 +4,7 @@
 
 [![Next.js 15](https://img.shields.io/badge/Next.js-15-111827?logo=nextdotjs)](dashboard/package.json)
 [![Solidity 0.8.24](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)](contracts/LegacyKeeper.sol)
-[![Core tests](https://img.shields.io/badge/core_tests-408_passing-16a34a)](#verification)
+[![Core tests](https://img.shields.io/badge/core_tests-423_passing-16a34a)](#verification)
 [![Sepolia](https://img.shields.io/badge/network-Sepolia-627eea?logo=ethereum)](https://sepolia.etherscan.io/address/0xf434788C775a36736CF3Ce0D2e0368E22BF9c576)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -26,16 +26,38 @@ assets outside the contract rules.
 
 The live release uses Sepolia. Do not connect a wallet that holds mainnet funds.
 
+## Bounty path: first verified transaction
+
+The smallest clean-clone path needs one KeeperHub organization key. It does not
+need a deployer key, funded wallet, webhook key, workflow IDs, database, or
+Telegram configuration:
+
+```bash
+npm ci
+KEEPERHUB_API_KEY=kh_your_key_here npm run first-tx
+```
+
+The command submits one owner-authorized, sponsored Sepolia `createPlan` call,
+then independently verifies the receipt, `PlanCreated` event, factory mapping,
+deployed bytecode, owner, and initialization state. Its JSON result includes
+the KeeperHub execution ID, transaction hash, Etherscan link, and elapsed time
+from MCP handshake to verified proof. See the [one-key quickstart](starter/README.md)
+or inspect the request without sending it with `npm run first-tx:dry-run`.
+
+The retained 2026-08-13 benchmark reached independently verified proof in
+**74.3 seconds** via sponsored [Sepolia transaction `0x2f39…bbca`](https://sepolia.etherscan.io/tx/0x2f39e73bb20e3cea728da830708e2a2a9f98e590fb0638307ec5afee8025bbca).
+See the [sanitized benchmark evidence](reports/first-transaction-benchmark.json).
+
 ## Judge Path: One Current-Factory Journey
 
 This is the shortest path through the working product and its evidence:
 
-| Step         | Judge action                                                                                                                                                     | Proof                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1. Create    | Sign one exact EIP-712 continuity policy; the enabled Plan Creation workflow relays `LegacyKeeperFactory.createPlan`                                             | Current factory [`PlanCreated` transaction `0x4b3904ab`](https://sepolia.etherscan.io/tx/0x4b3904ab94b701cf30433082eed2e08931749956ee8e0d5f8d8405fd3af38a31) registered owner `0x34b0…F724` to plan [`0x652c…5228`](https://sepolia.etherscan.io/address/0x652caD60cd4D0F813e51B9b0cF43BA490EdA5228)                                                                                                                                                                                                                                                                                          |
-| 2. Configure | Increase only the grace period from seven to eight days; the enabled Configuration workflow relays the owner-scoped signature                                    | KeeperHub execution `1bce3s44ha57dy1zg7t7z` produced [`ConfigUpdated` transaction `0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) and the plan now reads `691200` seconds                                                                                                                                                                                                                                                                                                                                                   |
-| 3. Check in  | Sign a heartbeat; the enabled Heartbeat Relay workflow submits it without owner-paid gas                                                                         | Sponsored [`HeartbeatRecorded` transaction `0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) advanced that same plan                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 4. Verify    | Open Activity and follow the retained transaction proof                                                                                                          | LegacyKeeper reports success only when the KeeperHub execution, successful receipt, expected event, current factory mapping, and resulting plan state agree; the complete [configuration evidence](reports/current-factory-configuration-evidence.json) is retained in-repo                                                                                                                                                                                                                                                                                                                   |
+| Step         | Judge action                                                                                                                                                                        | Proof                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Create    | Sign one exact EIP-712 continuity policy; the enabled Plan Creation workflow relays `LegacyKeeperFactory.createPlan`                                                                | Current factory [`PlanCreated` transaction `0x4b3904ab`](https://sepolia.etherscan.io/tx/0x4b3904ab94b701cf30433082eed2e08931749956ee8e0d5f8d8405fd3af38a31) registered owner `0x34b0…F724` to plan [`0x652c…5228`](https://sepolia.etherscan.io/address/0x652caD60cd4D0F813e51B9b0cF43BA490EdA5228)                                                                                                                                                                                                                                                                                          |
+| 2. Configure | Increase only the grace period from seven to eight days; the enabled Configuration workflow relays the owner-scoped signature                                                       | KeeperHub execution `1bce3s44ha57dy1zg7t7z` produced [`ConfigUpdated` transaction `0x5056f7d8`](https://sepolia.etherscan.io/tx/0x5056f7d8c9d240caaf7ab0602d1ef810efecdbb1bde6279e97248ca9fadf9bdc) and the plan now reads `691200` seconds                                                                                                                                                                                                                                                                                                                                                   |
+| 3. Check in  | Sign a heartbeat; the enabled Heartbeat Relay workflow submits it without owner-paid gas                                                                                            | Sponsored [`HeartbeatRecorded` transaction `0xab98f3e1`](https://sepolia.etherscan.io/tx/0xab98f3e1c1e20006fcc4e492bd147dd7e1399cfa4e7580d5436bf1c0d6b554c3) advanced that same plan                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 4. Verify    | Open Activity and follow the retained transaction proof                                                                                                                             | LegacyKeeper reports success only when the KeeperHub execution, successful receipt, expected event, current factory mapping, and resulting plan state agree; the complete [configuration evidence](reports/current-factory-configuration-evidence.json) is retained in-repo                                                                                                                                                                                                                                                                                                                   |
 | 5. Inherit   | Let the signed inactivity window and grace period expire; a durable per-plan Vercel Workflow wakes at the exact deadline, rereads canonical state, and requests sponsored execution | Two independent current-factory plans have completed inheritance: [`0x1284eeb4`](https://sepolia.etherscan.io/tx/0x1284eeb4deba522d2717e6056921fe31261632c226ab992a81d77922321a3ca9) and [`0xdc96cb02`](https://sepolia.etherscan.io/tx/0xdc96cb02826a18982f4afc5701f59ef5f9155a5ea184e6e1b5292469ec7eec98). The second plan also distributed approved USDC in [`0x13d7dfa6`](https://sepolia.etherscan.io/tx/0x13d7dfa6523afac9095324171da254712de7ee3e1a29b6d55ec76e5e5a279cdd); the complete [inheritance evidence](reports/current-factory-inheritance-evidence.json) is retained in-repo |
 
 The deterministic agent is the safety feature: it observes liveness, evaluates
@@ -44,14 +66,14 @@ KeeperHub, and rejects incomplete or contradictory proof.
 
 ### Submission proof status
 
-| Surface              | Status                                          | Evidence boundary                                                                                                                                                                                                                          |
-| -------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Wallet-scoped writes | **Four enabled workflows**                      | Plan creation, configuration, heartbeat, and evacuation are reproducible from [`wallet-scoped-definitions.ts`](workflows/wallet-scoped-definitions.ts) and their [stored exports](workflows/exported/)                                     |
-| Outcome verification | **Fail-closed**                                 | No success without execution ID, transaction hash, successful receipt, expected event, registry match, and resulting state                                                                                                                 |
-| Liveness monitor     | **Durable per-plan deadline workflow**           | Plan creation starts a Vercel Workflow; verified check-ins and configuration changes wake it. It sleeps until `lastHeartbeat + timeoutDuration + gracePeriod`, then rereads the factory mapping and plan state before writing. The UI and GitHub scan remain reconciliation paths, not the clock |
-| x402 allowance check | **Settled and consumed**                        | The address-bound OneSource result returned after a $0.003 USDC payment on Base: [`0x03376097`](https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5)                                                |
-| MPP                  | **Not demonstrated**                            | The advertised route required an unfunded Tempo account; no funding was authorized                                                                                                                                                         |
-| Private routing      | **Not proven**                                  | No request parameter or returned route evidence was available, so LegacyKeeper does not claim it was used                                                                                                                                  |
+| Surface              | Status                                 | Evidence boundary                                                                                                                                                                                                                                                                                |
+| -------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Wallet-scoped writes | **Four enabled workflows**             | Plan creation, configuration, heartbeat, and evacuation are reproducible from [`wallet-scoped-definitions.ts`](workflows/wallet-scoped-definitions.ts) and their [stored exports](workflows/exported/)                                                                                           |
+| Outcome verification | **Fail-closed**                        | No success without execution ID, transaction hash, successful receipt, expected event, registry match, and resulting state                                                                                                                                                                       |
+| Liveness monitor     | **Durable per-plan deadline workflow** | Plan creation starts a Vercel Workflow; verified check-ins and configuration changes wake it. It sleeps until `lastHeartbeat + timeoutDuration + gracePeriod`, then rereads the factory mapping and plan state before writing. The UI and GitHub scan remain reconciliation paths, not the clock |
+| x402 allowance check | **Settled and consumed**               | The address-bound OneSource result returned after a $0.003 USDC payment on Base: [`0x03376097`](https://basescan.org/tx/0x033760975981b88c5f22755529eec4273bc0a873cfb41589158bdd33141113f5)                                                                                                      |
+| MPP                  | **Not demonstrated**                   | The advertised route required an unfunded Tempo account; no funding was authorized                                                                                                                                                                                                               |
+| Private routing      | **Not proven**                         | No request parameter or returned route evidence was available, so LegacyKeeper does not claim it was used                                                                                                                                                                                        |
 
 ## Product Preview
 
@@ -295,7 +317,7 @@ beneficiaries.
 | Contracts     | Solidity 0.8.24, Hardhat, EIP-712                            |
 | Execution     | KeeperHub MCP and wallet-scoped webhook workflows            |
 | Web app       | Next.js 15 App Router, React 19, wagmi, viem, TanStack Query |
-| Watcher       | Vercel Workflow DevKit 4.8                                  |
+| Watcher       | Vercel Workflow DevKit 4.8                                   |
 | Data          | PostgreSQL, Drizzle ORM                                      |
 | Notifications | Telegram Bot API webhook                                     |
 | Tests         | Hardhat, Vitest, Playwright                                  |
@@ -465,6 +487,8 @@ reports/                   historical live evidence, limitations, and threat mod
 
 ## Further documentation
 
+- [Best Onboarding UX Improvement entry](reports/onboarding-bounty-entry.md)
+- [One-key first-transaction quickstart](starter/README.md)
 - [Clean-clone and production tutorial](starter/docs/tutorial.md)
 - [KeeperHub onboarding teardown: first tool call to verified transaction](reports/keeperhub-onboarding-teardown.md)
 - [Threat model](reports/threat-model.md)
