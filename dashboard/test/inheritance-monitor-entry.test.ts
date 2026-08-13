@@ -84,6 +84,20 @@ describe("scheduled inheritance entry point", () => {
     expect(workflow).toContain("?authOnly=1");
   });
 
+  it("allows an explicit manual full reconciliation run", () => {
+    const workflow = readFileSync(
+      new URL(
+        "../../.github/workflows/inheritance-monitor.yml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(workflow).toContain("execute:");
+    expect(workflow).toContain("RUN_FULL_SCAN");
+    expect(workflow).toContain('"$RUN_FULL_SCAN" != "true"');
+  });
+
   it("does not expose provider error details to the public workflow log", () => {
     const route = readFileSync(
       new URL("../app/api/monitor/inheritance/route.ts", import.meta.url),
