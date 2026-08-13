@@ -23,7 +23,7 @@ export function createSepoliaClient() {
 export function createSepoliaLogsClient() {
   return createPublicClient({
     chain: sepolia,
-    transport: http(requiredRpcUrl(), {
+    transport: http(requiredLogsRpcUrl(), {
       batch: { batchSize: 50 },
     }),
   });
@@ -93,4 +93,8 @@ function requiredRpcUrl(): string {
     'SEPOLIA_RPC_URL',
     process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL,
   );
+}
+
+function requiredLogsRpcUrl(): string {
+  return requiredEnv('SEPOLIA_LOGS_RPC_URL', requiredRpcUrl());
 }

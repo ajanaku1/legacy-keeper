@@ -42,7 +42,6 @@ const INHERITANCE_EVENTS = parseAbi([
 const TOKEN_INHERITANCE_EVENTS = parseAbi([
   "event InheritanceTransfer(address indexed beneficiary, address indexed token, uint256 amount)",
 ]);
-const EVENT_QUERY_BLOCK_RANGE = 10n;
 const EVENT_QUERY_CONCURRENCY = 500;
 
 export interface MonitorDependencyOptions {
@@ -183,21 +182,27 @@ function blockRanges(
   deploymentBlock: bigint,
   latestBlock: bigint,
 ): Array<{ fromBlock: bigint; toBlock: bigint }> {
+  const blockRange = eventQueryBlockRange();
   const ranges = [];
   for (
     let fromBlock = deploymentBlock;
     fromBlock <= latestBlock;
-    fromBlock += EVENT_QUERY_BLOCK_RANGE
+    fromBlock += blockRange
   ) {
     ranges.push({
       fromBlock,
-      toBlock: minBlock(
-        fromBlock + EVENT_QUERY_BLOCK_RANGE - 1n,
-        latestBlock,
-      ),
+      toBlock: minBlock(fromBlock + blockRange - 1n, latestBlock),
     });
   }
   return ranges;
+}
+
+function eventQueryBlockRange(): bigint {
+  const range = BigInt(requiredEnv("SEPOLIA_LOGS_BLOCK_RANGE", "10"));
+  if (range < 1n) {
+    throw new Error("SEPOLIA_LOGS_BLOCK_RANGE must be a positive integer.");
+  }
+  return range;
 }
 
 function minBlock(left: bigint, right: bigint): bigint {

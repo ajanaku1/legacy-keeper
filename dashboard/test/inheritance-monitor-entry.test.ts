@@ -94,6 +94,15 @@ describe("scheduled inheritance entry point", () => {
     expect(route).toContain('{ error: "Monitor failed" }');
   });
 
+  it("supports a dedicated RPC endpoint for historical log discovery", () => {
+    const routeServer = readFileSync(
+      new URL("../lib/route-server.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(routeServer).toContain("SEPOLIA_LOGS_RPC_URL");
+  });
+
   it("ships an immediate registry-validated trigger for an eligible open dashboard", () => {
     const route = readFileSync(
       new URL("../app/api/inheritance/route.ts", import.meta.url),

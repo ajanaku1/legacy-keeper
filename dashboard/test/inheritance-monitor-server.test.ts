@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
     connect: vi.fn(async () => undefined),
   },
   createSepoliaLogsClient: vi.fn(),
+  logBlockRange: "10",
 }));
 
 vi.mock("../lib/route-server", () => ({
@@ -28,9 +29,10 @@ vi.mock("../lib/route-server", () => ({
   createSepoliaClient: vi.fn(() => mocks.client),
   createSepoliaLogsClient: mocks.createSepoliaLogsClient,
   readRegisteredPlanAcrossFactories: vi.fn(),
-  requiredEnv: vi.fn((name: string) =>
-    name.includes("DEPLOYMENT_BLOCK") ? "100" : "test-api-key",
-  ),
+  requiredEnv: vi.fn((name: string) => {
+    if (name === "SEPOLIA_LOGS_BLOCK_RANGE") return mocks.logBlockRange;
+    return name.includes("DEPLOYMENT_BLOCK") ? "100" : "test-api-key";
+  }),
   requiredFactories: vi.fn(() => [FACTORY]),
 }));
 
@@ -40,6 +42,7 @@ describe("inheritance monitor server dependencies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.createSepoliaLogsClient.mockReturnValue(mocks.logsClient);
+    mocks.logBlockRange = "10";
   });
 
   it("uses the dedicated batched client for historical event discovery", async () => {
@@ -52,7 +55,9 @@ describe("inheritance monitor server dependencies", () => {
     expect(mocks.client.getContractEvents).not.toHaveBeenCalled();
   });
 
-  it("queries factory events in inclusive ranges of at most ten blocks", async () => {
+  it("uses the configured inclusive block range for historical logs", async () => {
+    mocks.logBlockRange = "50000";
+    mocks.logsClient.getBlockNumber.mockResolvedValueOnce(50_102n);
     const dependencies = await createInheritanceMonitorDependencies();
 
     await dependencies.listRegisteredPlans();
@@ -63,9 +68,8 @@ describe("inheritance monitor server dependencies", () => {
         request.toBlock,
       ]),
     ).toEqual([
-      [100n, 109n],
-      [110n, 119n],
-      [120n, 122n],
+      [100n, 50_099n],
+      [50_100n, 50_102n],
     ]);
   });
 });
