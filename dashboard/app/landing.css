@@ -1051,7 +1051,10 @@
   margin: 0;
 }
 
-.landing-footer a {
+.landing-footer-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
   justify-self: end;
 }
 

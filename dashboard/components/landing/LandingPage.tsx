@@ -513,9 +513,18 @@ function LandingFooter() {
     <footer className="landing-footer">
       <span>LegacyKeeper</span>
       <p>{PRODUCT_POSITIONING.category}.</p>
-      <a href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">
-        Sepolia explorer ↗
-      </a>
+      <div className="landing-footer-links">
+        <a
+          href="https://x.com/curioswhispers"
+          target="_blank"
+          rel="noreferrer"
+        >
+          @curioswhispers ↗
+        </a>
+        <a href="https://sepolia.etherscan.io" target="_blank" rel="noreferrer">
+          Sepolia explorer ↗
+        </a>
+      </div>
     </footer>
   );
 }

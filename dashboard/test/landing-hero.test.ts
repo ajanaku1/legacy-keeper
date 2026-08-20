@@ -38,6 +38,14 @@ describe("landing continuity vault", () => {
     expect(page).toContain("Recovery wallet required");
   });
 
+  it("shows the authorized X account in the landing-page footer", () => {
+    const page = source("../components/landing/LandingPage.tsx");
+    const footer = page.slice(page.indexOf("function LandingFooter"));
+
+    expect(footer).toContain('href="https://x.com/curioswhispers"');
+    expect(footer).toContain("@curioswhispers");
+  });
+
   it("keeps mobile vault geometry responsive without scaling the whole scene", () => {
     const css = source("../app/landing.css");
 
